@@ -2,13 +2,17 @@ name: accumulate
 
 # Daily forward accumulation of X tournament posts.
 #
-# Capture is automatic; publishing is not. Each run discovers new tournament
-# tweets (nitter RSS), stores them with their links, downloads their images, and
-# queues them for review. It also re-exports the static snapshot from Neon, so
-# any decks you approved locally since the last run go live on the next push.
+# Each run discovers new tournament tweets (nitter RSS), stores them with their
+# links, downloads their images, pushes those images to R2, and re-exports the
+# static snapshot from Neon. Only the snapshot is committed — the images
+# themselves never enter git (the archive is ~3GB and growing; see .gitignore).
 #
-# Requires one repository secret:
-#   DATABASE_URL   a free Neon Postgres connection string (no card needed)
+# Requires these repository secrets:
+#   DATABASE_URL           free Neon Postgres connection string
+#   R2_ACCOUNT_ID          Cloudflare R2 (free tier: 10GB, zero egress)
+#   R2_ACCESS_KEY_ID
+#   R2_SECRET_ACCESS_KEY
+#   R2_BUCKET
 #
 # The site (Vercel) auto-redeploys when this workflow pushes the snapshot.
 
@@ -22,13 +26,17 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write # to commit the new images + snapshot back
+  contents: write # to commit the refreshed snapshot back
 
 jobs:
   accumulate:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,20 +47,35 @@ jobs:
 
       - run: npm ci
 
+      # Fail before touching anything. The runner is ephemeral: if it downloads
+      # images and then can't reach R2, the image rows land in the DB pointing at
+      # files that exist nowhere — permanently broken thumbnails. Better to stop.
+      - name: R2 자격증명 확인 (없으면 이미지 유실되므로 즉시 중단)
+        run: |
+          if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$R2_ACCESS_KEY_ID" ] || [ -z "$R2_SECRET_ACCESS_KEY" ] || [ -z "$R2_BUCKET" ]; then
+            echo "::error::R2 시크릿이 없습니다. npm run setup:cloud 로 등록하세요."
+            exit 1
+          fi
+
       - name: 새 대회 트윗 발견 (nitter)
         run: npm run poll
 
-      - name: 이미지 수집 + 검수 덱 생성
+      - name: 이미지 수집 + 자동 분류
         run: npm run backfill:images
+
+      # The runner is ephemeral, so the images it just downloaded exist nowhere
+      # else — they must reach R2 in this same job or they are lost.
+      - name: 이미지를 R2에 업로드
+        run: npm run upload:r2
 
       - name: 정적 스냅샷 갱신
         run: npm run export:static
 
-      - name: 변경분 커밋 & 푸시 (→ Vercel 재배포)
+      - name: 스냅샷 커밋 & 푸시 (→ Vercel 재배포)
         run: |
           git config user.name "ws-deckcheck-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add public/media src/generated/data.json
+          git add src/generated/data.json
           if git diff --cached --quiet; then
             echo "변경 없음 — 새 대회 글 없음"
           else

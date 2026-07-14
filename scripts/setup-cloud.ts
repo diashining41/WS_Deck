@@ -2,10 +2,12 @@
  * Configures the GitHub Actions cloud automation, end to end.
  *
  * Uses the GitHub credential already stored on this machine (the one `git push`
- * uses) to: set the DATABASE_URL repository secret so the workflow can reach
- * Neon, then trigger the first run. The token is never printed.
+ * uses) to push every secret the workflow needs — Neon plus the R2 bucket the
+ * images now live in — and then trigger a run. Values are read from .env.local
+ * and are never printed.
  *
- * Run once:  npm run setup:cloud
+ * Run:  npm run setup:cloud            (sync secrets)
+ *       npm run setup:cloud -- --no-run (sync only, don't trigger a run)
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -16,12 +18,23 @@ const OWNER = 'diashining41';
 const REPO = 'WS_Deck';
 const API = `https://api.github.com/repos/${OWNER}/${REPO}`;
 
-// DATABASE_URL from .env.local (never committed).
-const envLine = readFileSync('.env.local', 'utf8')
-  .split('\n')
-  .find((l) => l.startsWith('DATABASE_URL='));
-const DATABASE_URL = envLine?.slice('DATABASE_URL='.length).trim();
-if (!DATABASE_URL) throw new Error('.env.local 에 DATABASE_URL 이 없습니다');
+/** Every secret the workflow reads. Without R2 the runner would download images and lose them. */
+const REQUIRED = [
+  'DATABASE_URL',
+  'R2_ACCOUNT_ID',
+  'R2_ACCESS_KEY_ID',
+  'R2_SECRET_ACCESS_KEY',
+  'R2_BUCKET',
+] as const;
+
+const env = new Map<string, string>();
+for (const line of readFileSync('.env.local', 'utf8').split('\n')) {
+  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
+  if (m?.[1] && m[2]) env.set(m[1], m[2].trim());
+}
+
+const missing = REQUIRED.filter((k) => !env.get(k));
+if (missing.length) throw new Error(`.env.local 에 없는 값: ${missing.join(', ')}`);
 
 // The GitHub token git already stored on this machine.
 function githubToken(): string {
@@ -46,39 +59,41 @@ const gh = (path: string, init: RequestInit = {}) =>
     },
   });
 
-// 1. Repo public key for sealing the secret.
+// Repo public key for sealing secrets (GitHub's required scheme).
 const keyRes = await gh('/actions/secrets/public-key');
 if (!keyRes.ok) throw new Error(`public-key 실패: HTTP ${keyRes.status} — 토큰에 secrets 권한이 없을 수 있습니다`);
 const { key, key_id } = (await keyRes.json()) as { key: string; key_id: string };
 
-// 2. Seal DATABASE_URL with libsodium (GitHub's required scheme).
 await _sodium.ready;
 const sodium = _sodium;
-const sealed = sodium.crypto_box_seal(
-  sodium.from_string(DATABASE_URL),
-  sodium.from_base64(key, sodium.base64_variants.ORIGINAL),
-);
-const encrypted_value = sodium.to_base64(sealed, sodium.base64_variants.ORIGINAL);
 
-// 3. Write the secret.
-const putRes = await gh('/actions/secrets/DATABASE_URL', {
-  method: 'PUT',
-  body: JSON.stringify({ encrypted_value, key_id }),
-});
-if (!putRes.ok) throw new Error(`시크릿 설정 실패: HTTP ${putRes.status}`);
-console.log('✅ GitHub 시크릿 DATABASE_URL 설정됨');
+for (const name of REQUIRED) {
+  const sealed = sodium.crypto_box_seal(
+    sodium.from_string(env.get(name)!),
+    sodium.from_base64(key, sodium.base64_variants.ORIGINAL),
+  );
+  const res = await gh(`/actions/secrets/${name}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      encrypted_value: sodium.to_base64(sealed, sodium.base64_variants.ORIGINAL),
+      key_id,
+    }),
+  });
+  if (!res.ok) throw new Error(`시크릿 ${name} 설정 실패: HTTP ${res.status}`);
+  console.log(`✅ 시크릿 ${name}`);
+}
 
-// 4. Trigger the first run.
+if (process.argv.includes('--no-run')) {
+  console.log('\n시크릿만 동기화했습니다 (실행은 생략).');
+  process.exit(0);
+}
+
 const runRes = await gh('/actions/workflows/accumulate.yml/dispatches', {
   method: 'POST',
   body: JSON.stringify({ ref: 'main' }),
 });
 if (runRes.status === 204) {
-  console.log('✅ accumulate 워크플로우 실행 시작됨');
-  console.log(`\n실행 상태: https://github.com/${OWNER}/${REPO}/actions`);
+  console.log(`\n✅ accumulate 워크플로우 실행 시작 — https://github.com/${OWNER}/${REPO}/actions`);
 } else {
-  console.log(`⚠ 워크플로우 실행 요청 HTTP ${runRes.status} (시크릿은 설정됨 — Actions 탭에서 수동 실행 가능)`);
+  console.log(`\n⚠ 실행 요청 HTTP ${runRes.status} (시크릿은 설정됨 — Actions 탭에서 수동 실행 가능)`);
 }
-
-console.log('\n이제 매일 06:00 KST 에 클라우드에서 자동으로 대회 트윗이 쌓입니다.');
-console.log('게시는 로컬 검수: npm run dev → /admin/review');
