@@ -111,6 +111,10 @@ export interface ReviewItem {
   titleId: number | null;
   titleName: string | null;
   imageId: string | null;
+  region: 'JP' | 'KR' | 'OVERSEAS';
+  scale: 'SHOP' | 'CS' | 'BUSHIROAD';
+  format: 'SINGLES' | 'TRIO';
+  top4: boolean | null;
   confidence: number | null;
   status: string;
   sortAt: string;
@@ -151,6 +155,10 @@ export async function listReviewQueue(limit = 50): Promise<ReviewItem[]> {
       titleName: titles.nameKo,
       imageId: decks.imageId,
       imageVerified: decks.imageVerified,
+      region: decks.region,
+      scale: decks.scale,
+      format: decks.format,
+      top4: decks.top4,
       confidence: decks.confidence,
       status: decks.status,
       sortAt: decks.sortAt,

@@ -9,6 +9,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { db, rows as toRows } from '@/db';
 import { decks, images, posts } from '@/db/schema';
+import { climaxesFromText, guessFormat, guessRegion, guessScale } from '@/lib/heuristics';
 import { download, storeImage, type ImageKind } from '@/lib/media';
 import { decklogImageUrl, fetchTweet, RateLimited } from '@/lib/x';
 
@@ -18,7 +19,13 @@ const LIMIT = Number(process.env.LIMIT ?? Infinity);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const pending = await db
-  .select({ id: posts.id, source: posts.source, sourceId: posts.sourceId, url: posts.urlOriginal })
+  .select({
+    id: posts.id,
+    source: posts.source,
+    sourceId: posts.sourceId,
+    url: posts.urlOriginal,
+    postedAt: posts.postedAt,
+  })
   .from(posts)
   .leftJoin(images, eq(images.postId, posts.id))
   .where(isNull(images.id))
@@ -117,18 +124,42 @@ for (const post of pending.slice(0, LIMIT)) {
       .from(decks)
       .where(eq(decks.postId, post.id));
 
-    const certain = postDecks.length === 1 && rows.length === 1;
-
-    for (const d of postDecks) {
-      const match = rows.find((r) => r.mediaIndex === d.mediaIndex);
-      if (!match) continue;
-      await db
-        .update(decks)
-        .set({ imageId: match.id, imageVerified: certain })
-        .where(eq(decks.id, d.id));
+    if (postDecks.length === 0) {
+      // A freshly captured post (from the poller) has no decks yet. Create one
+      // needs_review deck per image so it shows up in the review queue, with the
+      // country/scale/format guessed from the text for the reviewer to confirm.
+      const region = guessRegion(text);
+      const scale = guessScale(text);
+      const format = guessFormat(text);
+      const climaxes = climaxesFromText(text);
+      for (const r of rows) {
+        await db.insert(decks).values({
+          postId: post.id,
+          mediaIndex: r.mediaIndex,
+          imageId: r.id,
+          imageVerified: rows.length === 1, // single image ⇒ binding is certain
+          climaxes,
+          region,
+          scale,
+          format,
+          status: 'needs_review',
+          provenance: 'ai',
+          sortAt: post.postedAt ?? new Date(),
+        });
+      }
+      console.log(`${label} ✓ 이미지 ${rows.length}장 · 검수덱 ${rows.length}개 생성 (${region}/${scale}/${format})`);
+    } else {
+      const certain = postDecks.length === 1 && rows.length === 1;
+      for (const d of postDecks) {
+        const match = rows.find((r) => r.mediaIndex === d.mediaIndex);
+        if (!match) continue;
+        await db
+          .update(decks)
+          .set({ imageId: match.id, imageVerified: certain })
+          .where(eq(decks.id, d.id));
+      }
+      console.log(`${label} ✓ 이미지 ${rows.length}장 · 덱 ${postDecks.length}개${certain ? '' : ' (이미지-덱 매칭 미확정)'}`);
     }
-
-    console.log(`${label} ✓ 이미지 ${rows.length}장 · 덱 ${postDecks.length}개${certain ? '' : ' (이미지-덱 매칭 미확정)'}`);
   } catch (err) {
     if (err instanceof RateLimited) {
       const waitMs = Math.max(5_000, err.resetAt.getTime() - Date.now() + 2_000);

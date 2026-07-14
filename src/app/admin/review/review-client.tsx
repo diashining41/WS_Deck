@@ -37,6 +37,10 @@ export function ReviewClient({
   const [imageId, setImageId] = useState<string | null>(null);
   const [titleQuery, setTitleQuery] = useState('');
   const [titleOpen, setTitleOpen] = useState(false);
+  const [region, setRegion] = useState<ReviewItem['region']>('JP');
+  const [scale, setScale] = useState<ReviewItem['scale']>('SHOP');
+  const [format, setFormat] = useState<ReviewItem['format']>('SINGLES');
+  const [top4, setTop4] = useState(false);
 
   // Reset the form to whatever the AI (or the import) already guessed, so the
   // common case is "it's right — press Enter".
@@ -45,6 +49,10 @@ export function ReviewClient({
     setClimaxes(item.climaxes ?? []);
     setTitleId(item.titleId);
     setImageId(item.imageId ?? item.candidates[0]?.id ?? null);
+    setRegion(item.region);
+    setScale(item.scale);
+    setFormat(item.format);
+    setTop4(item.top4 ?? false);
     setTitleQuery('');
     setTitleOpen(false);
   }, [item]);
@@ -60,11 +68,11 @@ export function ReviewClient({
   const approve = useCallback(() => {
     if (!item || pending) return;
     startTransition(async () => {
-      await approveDeck({ deckId: item.id, climaxes, titleId, imageId });
+      await approveDeck({ deckId: item.id, climaxes, titleId, imageId, region, scale, format, top4 });
       setDone((d) => new Set(d).add(item.id));
       advance();
     });
-  }, [item, pending, climaxes, titleId, imageId, advance]);
+  }, [item, pending, climaxes, titleId, imageId, region, scale, format, top4, advance]);
 
   const reject = useCallback(() => {
     if (!item || pending) return;
@@ -250,6 +258,26 @@ export function ReviewClient({
           )}
         </div>
 
+        {/* Guessed from the post text at capture — glance and fix only if wrong. */}
+        <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4">
+          <Seg label="국가" value={region} onChange={setRegion} opts={[['JP', '일본'], ['KR', '한국'], ['OVERSEAS', '해외']]} />
+          <Seg label="규모" value={scale} onChange={setScale} opts={[['SHOP', '소'], ['CS', '중'], ['BUSHIROAD', '대']]} />
+          <Seg label="형식" value={format} onChange={setFormat} opts={[['SINGLES', '개인'], ['TRIO', '트리오']]} />
+          <div className="flex items-center gap-2">
+            <span className="w-9 shrink-0 text-xs text-[var(--muted)]">4등</span>
+            <button
+              onClick={() => setTop4((v) => !v)}
+              className={`rounded-md border px-2 py-1 text-xs transition ${
+                top4
+                  ? 'border-amber-500 bg-amber-500/20 text-amber-300'
+                  : 'border-[var(--line)] bg-[var(--panel-2)] text-[var(--muted)]'
+              }`}
+            >
+              4등 이내
+            </button>
+          </div>
+        </div>
+
         <div className="rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4">
           <p className="mb-2 text-xs text-[var(--muted)]">클라이맥스 — 숫자키 (최대 4개)</p>
           <div className="grid grid-cols-2 gap-1.5">
@@ -292,6 +320,38 @@ export function ReviewClient({
 
         <p className="text-center text-[11px] text-[var(--muted)]">← → 이동 · 처리 {done.size}건</p>
       </div>
+    </div>
+  );
+}
+
+/** A one-line segmented control: 국가 [일본|한국|해외] etc. */
+function Seg<T extends string>({
+  label,
+  value,
+  onChange,
+  opts,
+}: {
+  label: string;
+  value: T;
+  onChange: (v: T) => void;
+  opts: [T, string][];
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="w-9 shrink-0 text-xs text-[var(--muted)]">{label}</span>
+      {opts.map(([v, text]) => (
+        <button
+          key={v}
+          onClick={() => onChange(v)}
+          className={`rounded-md border px-2 py-1 text-xs transition ${
+            v === value
+              ? 'border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]'
+              : 'border-[var(--line)] bg-[var(--panel-2)] text-[var(--muted)] hover:border-[var(--muted)]'
+          }`}
+        >
+          {text}
+        </button>
+      ))}
     </div>
   );
 }

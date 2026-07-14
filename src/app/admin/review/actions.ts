@@ -11,12 +11,19 @@ export interface ApproveInput {
   climaxes: Climax[];
   titleId: number | null;
   imageId: string | null;
+  region?: 'JP' | 'KR' | 'OVERSEAS';
+  scale?: 'SHOP' | 'CS' | 'BUSHIROAD';
+  format?: 'SINGLES' | 'TRIO';
+  top4?: boolean;
 }
 
 /**
  * One click ends the review. The deck goes live, and the image binding is
  * recorded as verified — which is the whole point for trio posts, where the
  * image is the only thing distinguishing two otherwise identical decks.
+ *
+ * region/scale/format are only sent for freshly captured decks (where they were
+ * guessed from the text); sheet-imported decks already have them and omit them.
  */
 export async function approveDeck(input: ApproveInput): Promise<void> {
   await db
@@ -29,6 +36,10 @@ export async function approveDeck(input: ApproveInput): Promise<void> {
       status: 'published',
       provenance: 'human',
       confidence: 1,
+      ...(input.region ? { region: input.region } : {}),
+      ...(input.scale ? { scale: input.scale } : {}),
+      ...(input.format ? { format: input.format } : {}),
+      ...(input.top4 !== undefined ? { top4: input.top4 } : {}),
     })
     .where(eq(decks.id, input.deckId));
 

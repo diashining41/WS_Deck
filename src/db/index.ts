@@ -16,14 +16,22 @@ const DATA_DIR = process.env.PGLITE_DIR ?? './.data/pg';
 
 type Db = ReturnType<typeof drizzlePglite<typeof schema>>;
 
-const globalForDb = globalThis as unknown as { __wsDeckDb?: Db; __wsDeckPglite?: PGlite };
+const globalForDb = globalThis as unknown as {
+  __wsDeckDb?: Db;
+  __wsDeckPglite?: PGlite;
+  __wsDeckPg?: ReturnType<typeof postgres>;
+};
 
 function create(): Db {
   const url = process.env.DATABASE_URL;
   if (url) {
-    // The two drivers expose the same query builder; only the shape of the
-    // raw-SQL result differs, which `rows()` below normalises.
-    return drizzlePostgres(postgres(url, { max: 5 }), { schema }) as unknown as Db;
+    // Neon (and any hosted Postgres). The two drivers expose the same query
+    // builder; only the shape of the raw-SQL result differs, which `rows()`
+    // below normalises. Keep the client so closeDb() can end it — otherwise a
+    // script's open pool keeps the CI process alive forever.
+    const client = globalForDb.__wsDeckPg ?? postgres(url, { max: 5 });
+    globalForDb.__wsDeckPg = client;
+    return drizzlePostgres(client, { schema }) as unknown as Db;
   }
   mkdirSync(DATA_DIR, { recursive: true });
   const client = globalForDb.__wsDeckPglite ?? new PGlite(DATA_DIR);
@@ -53,7 +61,9 @@ export function rows<T>(result: unknown): T[] {
  */
 export async function closeDb(): Promise<void> {
   await globalForDb.__wsDeckPglite?.close();
+  await globalForDb.__wsDeckPg?.end();
   globalForDb.__wsDeckPglite = undefined;
+  globalForDb.__wsDeckPg = undefined;
   globalForDb.__wsDeckDb = undefined;
 }
 

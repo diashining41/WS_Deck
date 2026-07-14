@@ -1,0 +1,61 @@
+name: accumulate
+
+# Daily forward accumulation of X tournament posts.
+#
+# Capture is automatic; publishing is not. Each run discovers new tournament
+# tweets (nitter RSS), stores them with their links, downloads their images, and
+# queues them for review. It also re-exports the static snapshot from Neon, so
+# any decks you approved locally since the last run go live on the next push.
+#
+# Requires one repository secret:
+#   DATABASE_URL   a free Neon Postgres connection string (no card needed)
+#
+# The site (Vercel) auto-redeploys when this workflow pushes the snapshot.
+
+on:
+  schedule:
+    - cron: '0 21 * * *' # 06:00 KST daily — after the evening's tournaments
+  workflow_dispatch: {} # also runnable by hand from the Actions tab
+
+concurrency:
+  group: accumulate
+  cancel-in-progress: false
+
+permissions:
+  contents: write # to commit the new images + snapshot back
+
+jobs:
+  accumulate:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: 새 대회 트윗 발견 (nitter)
+        run: npm run poll
+
+      - name: 이미지 수집 + 검수 덱 생성
+        run: npm run backfill:images
+
+      - name: 정적 스냅샷 갱신
+        run: npm run export:static
+
+      - name: 변경분 커밋 & 푸시 (→ Vercel 재배포)
+        run: |
+          git config user.name "ws-deckcheck-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add public/media src/generated/data.json
+          if git diff --cached --quiet; then
+            echo "변경 없음 — 새 대회 글 없음"
+          else
+            git commit -m "accumulate: $(date -u +%Y-%m-%d) 새 대회 덱 수집"
+            git push
+          fi

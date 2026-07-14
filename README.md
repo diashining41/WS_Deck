@@ -85,6 +85,42 @@ git push                 # GitHub → Vercel 자동 배포
   샵 공인(소) 대회에도 11건이 `O`로 찍혀 있습니다.
 - **X 게시물 ID는 TEXT.** 19자리 스노플레이크라 JS number로 바꾸면 뒷자리가 조용히 깨집니다.
 
+## 자동 축적 (앞으로 쌓이게)
+
+X는 과거 이력을 무료로 못 가져오지만(nitter는 최근분만), **오늘부터의 대회 트윗은
+매일 자동으로 쌓입니다.** `.github/workflows/accumulate.yml`이 하루 한 번:
+
+1. nitter로 214계정의 새 대회 트윗 발견 (원본 링크 보존)
+2. 이미지 수집 + **검수 대기 덱** 생성 (국가·규모·형식은 본문에서 추정)
+3. 정적 스냅샷 재생성 → 커밋 → push → Vercel 자동 재배포
+
+**게시는 검수를 거칩니다** (사진에서 작품·클라이맥스를 읽는 건 사람 또는 AI 몫).
+새 덱은 `/admin/review`에 쌓이고, 승인하면 다음 재배포 때 사이트에 노출됩니다.
+
+### 켜는 법 (Neon 무료 Postgres, 카드 불필요)
+
+클라우드(GitHub Actions)에서 돌리려면 상태가 클라우드에 유지돼야 해서 무료 Postgres가
+한 번 필요합니다.
+
+```bash
+# 1. neon.tech 에서 무료 프로젝트 생성 (GitHub 로그인, 카드 불필요) → 연결 문자열 복사
+# 2. 로컬에서 그 DB에 스키마 + 현재 데이터 이관 (한 번만):
+export DATABASE_URL="postgres://...neon..."
+npx drizzle-kit push        # 스키마
+npm run import:sheet        # 기존 485덱
+npm run seed:aliases
+npm run seed:accounts
+npm run backfill:images     # 이미지 (~10분)
+# 3. GitHub 저장소 → Settings → Secrets → Actions → New:
+#    DATABASE_URL = 위 연결 문자열
+# 4. Actions 탭 → accumulate → Run workflow 로 첫 실행 테스트
+```
+
+검수는 그 Neon에 붙어서: `DATABASE_URL=... npm run dev` → `/admin/review`.
+
+> 이미지는 아직 git에 커밋됩니다(월 ~200MB 증가). 저장소가 무거워지면 위 "이미지를 git
+> 밖으로" 절차대로 R2로 옮기면 됩니다 — 코드 변경 없음.
+
 ## 아직 안 된 것
 
 - **`/admin` 인증.** 지금은 잠금장치가 없습니다. 배포하면 누구나 덱을 지울 수 있으므로,
