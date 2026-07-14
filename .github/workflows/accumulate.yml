@@ -60,7 +60,14 @@ jobs:
       - name: 새 대회 트윗 발견 (nitter)
         run: npm run poll
 
+      # Bounded on purpose. upload:r2 runs only AFTER this step finishes, so a
+      # backlog big enough to hit the 6h job limit would strand every image it
+      # downloaded: the DB rows would point at files that died with the runner.
+      # A cap guarantees the job reaches the upload step. A day brings ~30 new
+      # posts, so 400 is slack; a larger backlog just drains 400 a day.
       - name: 이미지 수집 + 자동 분류
+        env:
+          LIMIT: 400
         run: npm run backfill:images
 
       # The runner is ephemeral, so the images it just downloaded exist nowhere
