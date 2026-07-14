@@ -1,7 +1,8 @@
 import type { Climax } from '@/db/schema';
 
 export const SHEET_ID = '10aivS4WkD8eeQZbTDmU_YVx1hziFqlAEfcN8Xx0btF0';
-export const SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`;
+export const csvUrl = (gid: string) =>
+  `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${gid}`;
 
 /** RFC4180-ish parser; the sheet has quoted cells containing commas and newlines. */
 export function parseCsv(text: string): string[][] {
@@ -37,24 +38,6 @@ export function parseCsv(text: string): string[][] {
   return rows;
 }
 
-/* Column layout of the sheet (0-based). Row 8 is the header; data starts at 9. */
-const COL = {
-  year: 1,
-  month: 2,
-  day: 3,
-  country: 4,
-  tournament: 5, // 소개인 / 중트리오 / 중개인 / 소트리오
-  top4: 6, // 'O' | '-'
-  title: 7,
-  code: 8,
-  climax: 9, // 'a' or 'a/b' … up to 4
-  url: 10,
-  masterTitle: 12,
-  masterCode: 13,
-} as const;
-
-export const HEADER_ROWS = 9;
-
 export type Region = 'JP' | 'KR' | 'OVERSEAS';
 export type Scale = 'SHOP' | 'CS' | 'BUSHIROAD';
 export type Format = 'SINGLES' | 'TRIO';
@@ -65,7 +48,7 @@ const REGION: Record<string, Region> = { 일본: 'JP', 한국: 'KR', 해외: 'OV
 /**
  * The sheet fuses scale and format into one token ("중트리오"). Splitting them
  * is what lets the UI facet on either axis independently.
- *   소 = 샵 공인 · 중 = 사설 CS · 대 = 부시로드 주관 (no 대 rows exist yet)
+ *   소 = 샵 공인 · 중 = 사설 CS · 대 = 부시로드 주관
  */
 const TOURNAMENT: Record<string, { scale: Scale; format: Format }> = {
   소개인: { scale: 'SHOP', format: 'SINGLES' },
@@ -102,20 +85,86 @@ export function normalizeClimax(raw: string): Climax | null {
   return (CLIMAXES as readonly string[]).includes(v) ? (v as Climax) : null;
 }
 
+/* ------------------------------------------------------------- tab layouts */
+
+/**
+ * The spreadsheet grew columns over time, so each half-year tab has its own
+ * layout. All indices are 0-based; data begins at `header + 1`. A `null` column
+ * means the tab never recorded that field — those rows are archived with the
+ * corresponding value left null rather than invented.
+ *
+ *   A (2026): full — country, scale/format token, top-4, code all present
+ *   B (2025): + a 바이스/로제 game column, but no country/scale/format/top-4
+ *   C (2024 H2): earliest — only year, month, work, climax, url
+ */
+export interface Layout {
+  header: number;
+  year: number;
+  month: number;
+  day: number | null;
+  country: number | null;
+  tournament: number | null;
+  top4: number | null;
+  title: number;
+  code: number | null;
+  climax: number;
+  url: number;
+  /** 바이스/로제 column — present only in the 2025 tabs. */
+  game: number | null;
+  masterTitle: number;
+  masterCode: number;
+}
+
+export const LAYOUT_A: Layout = {
+  header: 8, year: 1, month: 2, day: 3, country: 4, tournament: 5, top4: 6,
+  title: 7, code: 8, climax: 9, url: 10, game: null, masterTitle: 12, masterCode: 13,
+};
+export const LAYOUT_B: Layout = {
+  header: 6, year: 2, month: 3, day: 4, country: null, tournament: null, top4: null,
+  title: 5, code: 6, climax: 7, url: 8, game: 1, masterTitle: 10, masterCode: 11,
+};
+export const LAYOUT_C: Layout = {
+  header: 5, year: 1, month: 2, day: null, country: null, tournament: null, top4: null,
+  title: 3, code: null, climax: 4, url: 5, game: null, masterTitle: 7, masterCode: 8,
+};
+
+export interface Tab {
+  gid: string;
+  name: string;
+  layout: Layout;
+}
+
+/**
+ * Newest tab first: when the same work appears in several tabs' title masters,
+ * the earliest (newest-tab) code wins, and cross-tab duplicate posts keep the
+ * first (newest) occurrence.
+ */
+export const TABS: Tab[] = [
+  { gid: '0', name: '26년 하반기', layout: LAYOUT_A },
+  { gid: '740386458', name: '26년 상반기', layout: LAYOUT_A },
+  { gid: '251899463', name: '25년 하반기', layout: LAYOUT_B },
+  { gid: '1748151760', name: '25년 상반기', layout: LAYOUT_B },
+  { gid: '1749739193', name: '24년 하반기', layout: LAYOUT_C },
+];
+
 export interface SheetRow {
+  tab: string;
   rowIndex: number;
   date: Date;
-  region: Region;
-  scale: Scale;
-  format: Format;
+  region: Region | null;
+  scale: Scale | null;
+  format: Format | null;
   top4: boolean | null;
   titleKo: string;
-  code: string;
+  /** Present only where the tab has a code column; otherwise resolved from the master. */
+  code: string | null;
+  /** Verbatim 바이스/로제 cell, for Rosé exclusion (2025 tabs only). */
+  gameCol: string | null;
   climaxes: Climax[];
   url: string;
 }
 
-export interface ParsedSheet {
+export interface ParsedTab {
   titles: { nameKo: string; code: string }[];
   rows: SheetRow[];
   /** Rows whose URL cell holds something else entirely ("빌드 2위") — kept out of the DB. */
@@ -123,21 +172,19 @@ export interface ParsedSheet {
   warnings: string[];
 }
 
-export function parseSheet(csv: string): ParsedSheet {
+export function parseTab(csv: string, tab: Tab): ParsedTab {
   const all = parseCsv(csv);
+  const L = tab.layout;
   const warnings: string[] = [];
 
-  // Title master lives in columns M/N alongside the data, with its own header.
+  // Title master lives alongside the data in its own pair of columns.
   const seen = new Set<string>();
   const titles: { nameKo: string; code: string }[] = [];
   for (const r of all) {
-    const nameKo = (r[COL.masterTitle] ?? '').trim();
-    const code = (r[COL.masterCode] ?? '').trim();
-    if (!nameKo || !code || nameKo === '작품') continue;
-    if (seen.has(nameKo)) {
-      warnings.push(`중복 타이틀 마스터 항목 무시: ${nameKo} (${code})`);
-      continue;
-    }
+    const nameKo = (r[L.masterTitle] ?? '').trim();
+    const code = (r[L.masterCode] ?? '').trim();
+    if (!nameKo || !code || nameKo === '작품' || nameKo === '작품명') continue;
+    if (seen.has(nameKo)) continue;
     seen.add(nameKo);
     titles.push({ nameKo, code });
   }
@@ -145,51 +192,52 @@ export function parseSheet(csv: string): ParsedSheet {
   const rows: SheetRow[] = [];
   const quarantined: { rowIndex: number; cell: string }[] = [];
 
-  for (let i = HEADER_ROWS; i < all.length; i++) {
+  for (let i = L.header + 1; i < all.length; i++) {
     const r = all[i];
     if (!r) continue;
-    const url = (r[COL.url] ?? '').trim();
+    const url = (r[L.url] ?? '').trim();
     if (!url) continue;
-
     if (!/^https?:\/\//.test(url)) {
       quarantined.push({ rowIndex: i, cell: url });
       continue;
     }
-
-    const titleKo = (r[COL.title] ?? '').trim();
+    const titleKo = (r[L.title] ?? '').trim();
     if (!titleKo) {
       quarantined.push({ rowIndex: i, cell: `작품 없음 (${url})` });
       continue;
     }
 
-    const region = REGION[(r[COL.country] ?? '').trim()];
-    const tour = TOURNAMENT[(r[COL.tournament] ?? '').trim()];
-    if (!region || !tour) {
-      warnings.push(`행 ${i}: 국가/대회 정보 해석 실패 — ${r[COL.country]} / ${r[COL.tournament]}`);
-      continue;
-    }
+    // Country / scale / format / top-4 exist only where the tab has the column.
+    const region = L.country !== null ? (REGION[(r[L.country] ?? '').trim()] ?? null) : null;
+    const tour = L.tournament !== null ? TOURNAMENT[(r[L.tournament] ?? '').trim()] : undefined;
+    const top4 = L.top4 !== null ? ((r[L.top4] ?? '').trim() === 'O' ? true : null) : null;
 
     const climaxes: Climax[] = [];
-    for (const part of (r[COL.climax] ?? '').split('/')) {
+    for (const part of (r[L.climax] ?? '').split('/')) {
       const cx = normalizeClimax(part);
       if (cx) climaxes.push(cx);
-      else if (part.trim()) warnings.push(`행 ${i}: 알 수 없는 클라이맥스 "${part.trim()}"`);
+      else if (part.trim()) warnings.push(`${tab.name} 행 ${i}: 알 수 없는 클라이맥스 "${part.trim()}"`);
     }
 
-    const y = Number(r[COL.year]);
-    const m = Number(r[COL.month]);
-    const d = Number(r[COL.day]);
-    const date = Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d) ? new Date(Date.UTC(y, m - 1, d)) : new Date();
+    const y = Number(r[L.year]);
+    const m = Number(r[L.month]);
+    const d = L.day !== null ? Number(r[L.day]) : 1;
+    const date =
+      Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)
+        ? new Date(Date.UTC(y, m - 1, d || 1))
+        : new Date();
 
     rows.push({
+      tab: tab.name,
       rowIndex: i,
       date,
       region,
-      scale: tour.scale,
-      format: tour.format,
-      top4: (r[COL.top4] ?? '').trim() === 'O' ? true : null,
+      scale: tour?.scale ?? null,
+      format: tour?.format ?? null,
+      top4,
       titleKo,
-      code: (r[COL.code] ?? '').trim(),
+      code: L.code !== null ? (r[L.code] ?? '').trim() || null : null,
+      gameCol: L.game !== null ? (r[L.game] ?? '').trim() || null : null,
       climaxes,
       url,
     });

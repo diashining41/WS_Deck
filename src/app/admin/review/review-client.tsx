@@ -37,9 +37,11 @@ export function ReviewClient({
   const [imageId, setImageId] = useState<string | null>(null);
   const [titleQuery, setTitleQuery] = useState('');
   const [titleOpen, setTitleOpen] = useState(false);
-  const [region, setRegion] = useState<ReviewItem['region']>('JP');
-  const [scale, setScale] = useState<ReviewItem['scale']>('SHOP');
-  const [format, setFormat] = useState<ReviewItem['format']>('SINGLES');
+  // Non-null in the review form: a reviewer always commits a concrete value.
+  // (The archived pre-2026 rows can be null in the DB, but they don't reach here.)
+  const [region, setRegion] = useState<NonNullable<ReviewItem['region']>>('JP');
+  const [scale, setScale] = useState<NonNullable<ReviewItem['scale']>>('SHOP');
+  const [format, setFormat] = useState<NonNullable<ReviewItem['format']>>('SINGLES');
   const [top4, setTop4] = useState(false);
 
   // Reset the form to whatever the AI (or the import) already guessed, so the
@@ -49,9 +51,9 @@ export function ReviewClient({
     setClimaxes(item.climaxes ?? []);
     setTitleId(item.titleId);
     setImageId(item.imageId ?? item.candidates[0]?.id ?? null);
-    setRegion(item.region);
-    setScale(item.scale);
-    setFormat(item.format);
+    setRegion(item.region ?? 'JP');
+    setScale(item.scale ?? 'SHOP');
+    setFormat(item.format ?? 'SINGLES');
     setTop4(item.top4 ?? false);
     setTitleQuery('');
     setTitleOpen(false);

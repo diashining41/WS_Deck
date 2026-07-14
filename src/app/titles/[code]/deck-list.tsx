@@ -25,9 +25,9 @@ function toggle(set: Set<string>, v: string): Set<string> {
 }
 
 function matches(d: DeckCard, f: Facets): boolean {
-  if (f.region.size && !f.region.has(d.region)) return false;
-  if (f.scale.size && !f.scale.has(d.scale)) return false;
-  if (f.format.size && !f.format.has(d.format)) return false;
+  if (f.region.size && (!d.region || !f.region.has(d.region))) return false;
+  if (f.scale.size && (!d.scale || !f.scale.has(d.scale))) return false;
+  if (f.format.size && (!d.format || !f.format.has(d.format))) return false;
   if (f.top4 && !d.top4) return false;
   // OR within the climax facet: pick 문 and 초이스 to see decks running either.
   if (f.climax.size && !d.climaxes.some((c) => f.climax.has(c))) return false;
@@ -50,9 +50,9 @@ export function DeckList({ decks }: { decks: DeckCard[] }) {
     let top4 = 0;
     for (const d of decks) {
       for (const c of new Set(d.climaxes)) climax.set(c, (climax.get(c) ?? 0) + 1);
-      region.set(d.region, (region.get(d.region) ?? 0) + 1);
-      scale.set(d.scale, (scale.get(d.scale) ?? 0) + 1);
-      format.set(d.format, (format.get(d.format) ?? 0) + 1);
+      if (d.region) region.set(d.region, (region.get(d.region) ?? 0) + 1);
+      if (d.scale) scale.set(d.scale, (scale.get(d.scale) ?? 0) + 1);
+      if (d.format) format.set(d.format, (format.get(d.format) ?? 0) + 1);
       if (d.top4) top4++;
     }
     return { climax, region, scale, format, top4 };
@@ -243,12 +243,20 @@ function DeckCardView({ deck, onOpen }: { deck: DeckCard; onOpen: () => void }) 
 
         <div className="flex items-center gap-1.5 text-[11px] text-[var(--muted)]">
           <span>{formatDate(deck.sortAt)}</span>
-          <span>·</span>
-          <span>{REGION_LABEL[deck.region]}</span>
-          <span>·</span>
-          <span>
-            {SCALE_LABEL[deck.scale]} {FORMAT_LABEL[deck.format]}
-          </span>
+          {deck.region && (
+            <>
+              <span>·</span>
+              <span>{REGION_LABEL[deck.region]}</span>
+            </>
+          )}
+          {deck.scale && deck.format && (
+            <>
+              <span>·</span>
+              <span>
+                {SCALE_LABEL[deck.scale]} {FORMAT_LABEL[deck.format]}
+              </span>
+            </>
+          )}
         </div>
 
         <a

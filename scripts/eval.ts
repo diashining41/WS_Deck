@@ -128,8 +128,8 @@ for (const row of sample) {
     const cOk = eq_(gotCx, truthCx);
     if (tOk) titleOk++;
     if (cOk) cxOk++;
-    if (result.scale === SCALE[row.scale]) scaleOk++;
-    if (result.format === FORMAT[row.format]) formatOk++;
+    if (row.scale && result.scale === SCALE[row.scale]) scaleOk++;
+    if (row.format && result.format === FORMAT[row.format]) formatOk++;
 
     if (climaxInText) {
       cxTextTotal++;

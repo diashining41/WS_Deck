@@ -2,6 +2,7 @@ node_modules/
 .next/
 .data/
 data/sheet.csv
+data/tabs/
 .env
 .env.local
 next-env.d.ts
@@ -12,3 +13,6 @@ next-env.d.ts
 # (To move images off git later: set NEXT_PUBLIC_MEDIA_BASE_URL, run
 #  `npm run upload:r2`, and re-add `public/media/` here — no code change.)
 public/media/orig/
+
+# local worker log
+accumulate.log

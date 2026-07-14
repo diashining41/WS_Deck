@@ -35,9 +35,10 @@ export async function getTitleByCode(code: string): Promise<TitleSummary | null>
 export interface DeckCard {
   id: string;
   climaxes: Climax[];
-  region: 'JP' | 'KR' | 'OVERSEAS';
-  scale: 'SHOP' | 'CS' | 'BUSHIROAD';
-  format: 'SINGLES' | 'TRIO';
+  // Null for the archived 2024–2025 rows: those tabs never recorded country/scale/format.
+  region: 'JP' | 'KR' | 'OVERSEAS' | null;
+  scale: 'SHOP' | 'CS' | 'BUSHIROAD' | null;
+  format: 'SINGLES' | 'TRIO' | null;
   top4: boolean | null;
   sortAt: string;
   imageVerified: boolean;
@@ -111,9 +112,9 @@ export interface ReviewItem {
   titleId: number | null;
   titleName: string | null;
   imageId: string | null;
-  region: 'JP' | 'KR' | 'OVERSEAS';
-  scale: 'SHOP' | 'CS' | 'BUSHIROAD';
-  format: 'SINGLES' | 'TRIO';
+  region: 'JP' | 'KR' | 'OVERSEAS' | null;
+  scale: 'SHOP' | 'CS' | 'BUSHIROAD' | null;
+  format: 'SINGLES' | 'TRIO' | null;
   top4: boolean | null;
   confidence: number | null;
   status: string;

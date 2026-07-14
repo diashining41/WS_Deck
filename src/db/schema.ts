@@ -196,9 +196,16 @@ export const decks = pgTable(
     /** Up to 4 in the real data — modelling this as two columns would drop rows. */
     climaxes: climaxEnum('climaxes').array().notNull().default(sql`'{}'`),
 
-    region: regionEnum('region').notNull(),
-    scale: scaleEnum('scale').notNull(),
-    format: formatEnum('format').notNull(),
+    /**
+     * Nullable: the early spreadsheet tabs (2024 H2 – 2025) recorded only the
+     * work, climax, date and URL — no country/scale/format columns existed yet.
+     * Those rows are archived with these left null; the UI hides the badge when
+     * a value is missing rather than inventing one. Captured/AI rows and the
+     * 2026 tabs always fill them.
+     */
+    region: regionEnum('region'),
+    scale: scaleEnum('scale'),
+    format: formatEnum('format'),
     /**
      * Nullable, and deliberately unconstrained: the spreadsheet's legend claims
      * top-4 is only tracked for 중/대 events, but 11 SHOP-scale rows are marked
