@@ -8,11 +8,14 @@ data/tabs/
 next-env.d.ts
 *.tsbuildinfo
 
-# thumb + medium ship in the repo and Vercel serves them from /public. The
-# 349MB of originals are the local archive only.
-# (To move images off git later: set NEXT_PUBLIC_MEDIA_BASE_URL, run
-#  `npm run upload:r2`, and re-add `public/media/` here — no code change.)
-public/media/orig/
+# Images live in Cloudflare R2, never in git.
+#
+# The archive is ~14,000 deck photos (~3GB of thumb+medium, plus originals). Git
+# cannot absorb that: the repo would balloon and every CI clone would drag it
+# along. The site loads them from the bucket via NEXT_PUBLIC_MEDIA_BASE_URL
+# (.env.production); `npm run upload:r2` pushes new derivatives to the bucket.
+# Originals stay on the ingest machine as the cold archive.
+public/media/
 
 # local worker log
 accumulate.log

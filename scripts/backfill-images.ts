@@ -5,6 +5,8 @@
  * at tweets that get deleted, and once a tweet is gone its deck recipe is gone
  * with it. Everything else here can be rebuilt at any time; these bytes cannot.
  */
+import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { db, rows as toRows } from '@/db';
@@ -15,6 +17,61 @@ import { AliasMatcher } from '@/lib/match';
 import { download, storeImage, type ImageKind } from '@/lib/media';
 import { decklogImageUrl, fetchTweet, RateLimited } from '@/lib/x';
 
+/**
+ * Single-instance lock.
+ *
+ * Two backfills running at once walk the same pending list and race on
+ * UNIQUE(post_id, media_index) — that already happened once and turned ~40% of
+ * the run into duplicate-key errors and wasted downloads. The lock holds a PID;
+ * a lock left behind by a killed run is reclaimed.
+ */
+/**
+ * Sharding: the work is embarrassingly parallel, but two workers must never
+ * touch the same post (that races on UNIQUE(post_id, media_index)). So each
+ * worker takes a disjoint slice — post #i belongs to shard i % SHARD_TOTAL —
+ * and holds its own lock. 4 shards turns a ~17h sequential run into ~4h.
+ */
+const SHARD_ID = Number(process.env.SHARD_ID ?? 0);
+const SHARD_TOTAL = Number(process.env.SHARD_TOTAL ?? 1);
+
+const LOCK = `.data/backfill-${SHARD_ID}of${SHARD_TOTAL}.lock`;
+mkdirSync('.data', { recursive: true });
+function acquireLock(): void {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = openSync(LOCK, 'wx');
+      closeSync(fd);
+      writeFileSync(LOCK, String(process.pid));
+      return;
+    } catch {
+      const pid = Number(readFileSync(LOCK, 'utf8').trim());
+      let alive = false;
+      try {
+        process.kill(pid, 0); // signal 0 = existence check
+        alive = true;
+      } catch {
+        alive = false;
+      }
+      if (alive) {
+        console.log(`❌ 백필이 이미 실행 중입니다 (PID ${pid}). 중복 실행은 서로 충돌합니다.`);
+        process.exit(1);
+      }
+      unlinkSync(LOCK); // stale lock from a killed run
+    }
+  }
+}
+acquireLock();
+const releaseLock = () => {
+  try {
+    unlinkSync(LOCK);
+  } catch {
+    /* already gone */
+  }
+};
+process.on('exit', releaseLock);
+process.on('SIGINT', () => process.exit(130));
+process.on('SIGTERM', () => process.exit(143));
+
 // Title matcher, built once from the DB aliases, to auto-place captured decks.
 const titleMatcher = new AliasMatcher(
   (await db.select({ titleId: titleAliases.titleId, alias: titleAliases.alias }).from(titleAliases)).map((r) => ({
@@ -23,12 +80,15 @@ const titleMatcher = new AliasMatcher(
   })),
 );
 
-const PACING_MS = 1200;
+// Measured: two backfills ran concurrently (~600ms effective spacing) against the
+// per-tweet endpoint with zero rate-limit responses, so 800ms sequential is safe.
+// RateLimited is still honoured below if the endpoint ever pushes back.
+const PACING_MS = Number(process.env.PACING_MS ?? 800);
 const LIMIT = Number(process.env.LIMIT ?? Infinity);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const pending = await db
+const allPending = await db
   .select({
     id: posts.id,
     source: posts.source,
@@ -39,9 +99,17 @@ const pending = await db
   .from(posts)
   .leftJoin(images, eq(images.postId, posts.id))
   .where(isNull(images.id))
-  .groupBy(posts.id);
+  .groupBy(posts.id)
+  // Stable order, so the shard split is deterministic across workers.
+  .orderBy(posts.id);
 
-console.log(`이미지가 없는 게시물 ${pending.length}개\n`);
+const pending = allPending.filter((_, i) => i % SHARD_TOTAL === SHARD_ID);
+
+console.log(
+  `이미지가 없는 게시물 ${allPending.length}개` +
+    (SHARD_TOTAL > 1 ? ` · 이 샤드(${SHARD_ID}/${SHARD_TOTAL}) 담당 ${pending.length}개` : '') +
+    '\n',
+);
 
 let done = 0;
 let stored = 0;
@@ -90,7 +158,21 @@ for (const post of pending.slice(0, LIMIT)) {
       continue;
     }
 
+    // Idempotent: an interrupted run may already have stored this image, and the
+    // pending list is computed once up front. Never let a duplicate abort a post.
+    const findExisting = async (mediaIndex: number) => {
+      const [row] = await db
+        .select({ id: images.id, mediaIndex: images.mediaIndex })
+        .from(images)
+        .where(and(eq(images.postId, post.id), eq(images.mediaIndex, mediaIndex)))
+        .limit(1);
+      return row;
+    };
+
     const storeOne = async (mediaIndex: number) => {
+      const already = await findExisting(mediaIndex);
+      if (already) return already;
+
       const bytes = await download(mediaUrls[mediaIndex]!);
       const s = await storeImage(bytes, kind);
       const [row] = await db
@@ -108,9 +190,13 @@ for (const post of pending.slice(0, LIMIT)) {
           blur: s.blur,
           kind,
         })
+        .onConflictDoNothing({ target: [images.postId, images.mediaIndex] })
         .returning({ id: images.id, mediaIndex: images.mediaIndex });
-      stored++;
-      return row!;
+      if (row) {
+        stored++;
+        return row;
+      }
+      return (await findExisting(mediaIndex))!;
     };
 
     // Sheet posts already have decks; freshly captured posts don't.
