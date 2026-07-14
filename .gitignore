@@ -1,0 +1,14 @@
+node_modules/
+.next/
+.data/
+data/sheet.csv
+.env
+.env.local
+next-env.d.ts
+*.tsbuildinfo
+
+# thumb + medium ship in the repo and Vercel serves them from /public. The
+# 349MB of originals are the local archive only.
+# (To move images off git later: set NEXT_PUBLIC_MEDIA_BASE_URL, run
+#  `npm run upload:r2`, and re-add `public/media/` here — no code change.)
+public/media/orig/

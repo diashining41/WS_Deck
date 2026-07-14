@@ -1,0 +1,46 @@
+{
+  "name": "ws-deckcheck",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "db:push": "tsx scripts/db-push.ts",
+    "import:sheet": "tsx scripts/import-sheet.ts",
+    "backfill:images": "tsx scripts/backfill-images.ts",
+    "derive:climax": "tsx scripts/derive-climax-aliases.ts",
+    "seed:aliases": "tsx scripts/seed-aliases.ts",
+    "seed:accounts": "tsx scripts/seed-accounts.ts",
+    "poll": "tsx scripts/poll-x.ts",
+    "test:prefilter": "tsx scripts/test-prefilter.ts",
+    "export:static": "tsx scripts/export-static.ts",
+    "upload:r2": "tsx scripts/upload-r2.ts",
+    "eval": "tsx scripts/eval.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
+    "@aws-sdk/client-s3": "^3.1086.0",
+    "@electric-sql/pglite": "^0.2.17",
+    "drizzle-orm": "^0.38.3",
+    "next": "^15.1.6",
+    "postgres": "^3.4.5",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sharp": "^0.33.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "autoprefixer": "^10.4.20",
+    "drizzle-kit": "^0.30.1",
+    "postcss": "^8.5.1",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
