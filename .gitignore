@@ -19,3 +19,9 @@ public/media/
 
 # local worker log
 accumulate.log
+
+# The snapshot is a build artifact: regenerated from Neon daily, ~3MB of new git
+# objects per commit, and it grows with the archive. It lives in R2 instead and
+# the build fetches it (scripts/fetch-snapshot.mjs). Only snapshot.meta.json —
+# a few hundred bytes — is committed, to trigger the Vercel redeploy.
+src/generated/data.json

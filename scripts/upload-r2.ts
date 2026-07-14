@@ -87,7 +87,10 @@ console.log(`디스크 ${all.length}개 · 이미 업로드 ${all.length - todo.
 console.log(`→ r2://${R2_BUCKET} (동시 ${CONCURRENCY})\n`);
 
 if (todo.length === 0) {
-  console.log('✅ 새로 올릴 파일 없음');
+  // No new images — but the snapshot still has to go up, or the site would keep
+  // building against yesterday's data.
+  console.log('새로 올릴 이미지 없음');
+  await uploadSnapshot();
   process.exit(0);
 }
 
@@ -134,7 +137,39 @@ await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 writeFileSync(MANIFEST, JSON.stringify(done));
 
 const mb = (bytes / 1024 / 1024).toFixed(0);
-console.log(`\n✅ 업로드 ${uploaded}개 (${mb}MB)${failed ? ` · 실패 ${failed}개` : ''}`);
+console.log(`\n✅ 이미지 업로드 ${uploaded}개 (${mb}MB)${failed ? ` · 실패 ${failed}개` : ''}`);
 console.log(`   버킷 총 ${Object.keys(done).length}개 파일`);
 
+await uploadSnapshot();
+
 process.exit(failed > 0 ? 1 : 0);
+
+/**
+ * The site's data snapshot rides along to the bucket.
+ *
+ * Never manifest-skipped: it changes every run by design, and it must land
+ * AFTER the images above — a snapshot that references a photo not yet in the
+ * bucket renders as a broken thumbnail on the live site.
+ */
+async function uploadSnapshot(): Promise<void> {
+  const path = 'src/generated/data.json';
+  let body: Buffer;
+  try {
+    body = readFileSync(path);
+  } catch {
+    console.log('   (스냅샷 없음 — export:static 먼저 실행하세요)');
+    return;
+  }
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: 'snapshot/data.json',
+      Body: body,
+      ContentType: 'application/json',
+      // The build fetches this every deploy; a cached stale copy would ship
+      // yesterday's archive.
+      CacheControl: 'no-store, max-age=0',
+    }),
+  );
+  console.log(`✅ 스냅샷 업로드 (${(body.length / 1024).toFixed(0)}KB → snapshot/data.json)`);
+}

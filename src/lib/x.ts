@@ -77,6 +77,7 @@ export async function fetchTweet(id: string): Promise<Tweet | null> {
   if (!res.ok) throw new Error(`tweet ${id}: HTTP ${res.status}`);
 
   const j = (await res.json()) as {
+    __typename?: string;
     id_str?: string;
     text?: string;
     created_at?: string;
@@ -84,6 +85,17 @@ export async function fetchTweet(id: string): Promise<Tweet | null> {
     mediaDetails?: { media_url_https?: string; original_info?: { width?: number; height?: number } }[];
     entities?: { urls?: { expanded_url?: string }[] };
   };
+
+  /**
+   * A gone tweet does not reliably 404. When the post (or its author) is deleted,
+   * this endpoint answers 200 with a tombstone:
+   *   {"__typename":"TweetTombstone","tombstone":{...}}
+   * Parsed naively that becomes a tweet with no text and no media — which reads
+   * as "alive, just no photo" and is indistinguishable from a real text-only
+   * post. 247 deleted posts sat in the archive misfiled that way. Treat the
+   * tombstone as what it is: gone.
+   */
+  if (j.__typename === 'TweetTombstone') return null;
 
   const expanded = (j.entities?.urls ?? []).map((u) => u.expanded_url ?? '');
   const media: TweetMedia[] = (j.mediaDetails ?? [])

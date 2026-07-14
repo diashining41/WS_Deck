@@ -19,7 +19,10 @@
     "export:static": "tsx scripts/export-static.ts",
     "upload:r2": "tsx scripts/upload-r2.ts",
     "setup:cloud": "tsx scripts/setup-cloud.ts",
-    "eval": "tsx scripts/eval.ts"
+    "eval": "tsx scripts/eval.ts",
+    "prebuild": "node scripts/fetch-snapshot.mjs --if-missing",
+    "predev": "node scripts/fetch-snapshot.mjs --if-missing",
+    "fetch:snapshot": "node scripts/fetch-snapshot.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

@@ -33,12 +33,26 @@ for (const t of titles) {
   t.seasons = seasons;
 }
 
-const snapshot = { generatedAt: new Date().toISOString(), stats, titles, byTitle };
-writeFileSync(`${OUT}/data.json`, JSON.stringify(snapshot));
+const generatedAt = new Date().toISOString();
+const snapshot = { generatedAt, stats, titles, byTitle };
+const json = JSON.stringify(snapshot);
+writeFileSync(`${OUT}/data.json`, json);
 
-const kb = (Buffer.byteLength(JSON.stringify(snapshot)) / 1024).toFixed(0);
+/**
+ * data.json itself is NOT committed — it goes to R2 (see fetch-snapshot.mjs).
+ * But Vercel redeploys on a git push, so with nothing committed the site would
+ * never pick the new snapshot up. This few-hundred-byte receipt is the commit:
+ * it moves whenever the data moves, triggering the deploy, and it costs the repo
+ * nothing.
+ */
+writeFileSync(
+  `${OUT}/snapshot.meta.json`,
+  JSON.stringify({ generatedAt, ...stats, bytes: Buffer.byteLength(json) }, null, 2) + '\n',
+);
+
+const kb = (Buffer.byteLength(json) / 1024).toFixed(0);
 console.log(`정적 스냅샷 생성: ${OUT}/data.json  (${kb}KB)`);
 console.log(`  타이틀 ${titles.length}종 · 덱 ${deckTotal}개 · 미리보기 ${stats.images}개`);
-console.log(`  이 스냅샷 + public/media/{thumb,medium} 만으로 공개 사이트가 배포됩니다`);
+console.log(`  스냅샷은 R2 로 업로드됩니다 (npm run upload:r2) — git 에는 메타 파일만 커밋됩니다`);
 
 await closeDb();

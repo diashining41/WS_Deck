@@ -70,19 +70,24 @@ jobs:
           LIMIT: 400
         run: npm run backfill:images
 
-      # The runner is ephemeral, so the images it just downloaded exist nowhere
-      # else — they must reach R2 in this same job or they are lost.
-      - name: 이미지를 R2에 업로드
-        run: npm run upload:r2
-
       - name: 정적 스냅샷 갱신
         run: npm run export:static
 
-      - name: 스냅샷 커밋 & 푸시 (→ Vercel 재배포)
+      # Must run AFTER the export: this pushes both the new images and the
+      # snapshot that references them. The runner is ephemeral, so images that
+      # don't reach R2 in this same job are lost — and a snapshot published ahead
+      # of its images renders as broken thumbnails.
+      - name: 이미지 + 스냅샷을 R2에 업로드
+        run: npm run upload:r2
+
+      # data.json is NOT committed (it lives in R2). But Vercel redeploys on a
+      # push, so this tiny receipt is what tells the site to rebuild and pick up
+      # the snapshot we just uploaded.
+      - name: 메타 커밋 & 푸시 (→ Vercel 재배포)
         run: |
           git config user.name "ws-deckcheck-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add src/generated/data.json
+          git add src/generated/snapshot.meta.json
           if git diff --cached --quiet; then
             echo "변경 없음 — 새 대회 글 없음"
           else
