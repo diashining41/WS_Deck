@@ -90,23 +90,15 @@ for (const post of pending.slice(0, LIMIT)) {
       continue;
     }
 
-    if (mediaUrls.length === 0) {
-      console.log(`${label} — 이미지 없음`);
-      await db.update(posts).set({ rawText: text, fetchedAt: new Date() }).where(eq(posts.id, post.id));
-      await sleep(PACING_MS);
-      continue;
-    }
-
-    const rows: { id: string; mediaIndex: number }[] = [];
-    for (const [i, url] of mediaUrls.entries()) {
-      const bytes = await download(url);
+    const storeOne = async (mediaIndex: number) => {
+      const bytes = await download(mediaUrls[mediaIndex]!);
       const s = await storeImage(bytes, kind);
       const [row] = await db
         .insert(images)
         .values({
           postId: post.id,
-          mediaIndex: i,
-          originUrl: url,
+          mediaIndex,
+          originUrl: mediaUrls[mediaIndex]!,
           origKey: s.origKey,
           thumbKey: s.thumbKey,
           mediumKey: s.mediumKey,
@@ -117,66 +109,87 @@ for (const post of pending.slice(0, LIMIT)) {
           kind,
         })
         .returning({ id: images.id, mediaIndex: images.mediaIndex });
-      if (row) rows.push({ id: row.id, mediaIndex: row.mediaIndex });
       stored++;
-    }
+      return row!;
+    };
 
-    await db
-      .update(posts)
-      .set({ rawText: text, rawJson: raw as object, authorHandle: author, fetchedAt: new Date() })
-      .where(eq(posts.id, post.id));
-
-    // Bind each deck to its own image. The spreadsheet never recorded which
-    // photo went with which deck, so row order is our only guess — safe when a
-    // post holds a single deck, a guess when it holds a trio's three.
+    // Sheet posts already have decks; freshly captured posts don't.
     const postDecks = await db
       .select({ id: decks.id, mediaIndex: decks.mediaIndex })
       .from(decks)
       .where(eq(decks.postId, post.id));
 
     if (postDecks.length === 0) {
-      // Freshly captured post. Auto-classify from the text: decks whose title is
-      // named in the post publish immediately; the rest are held (needs_review).
+      // Captured post: classify from the TEXT first, and only download images for
+      // decks that will actually publish. A held post (no title in the text) would
+      // never show anyway, so we keep its link + text but skip the images — that's
+      // what stops a cold-start capture from committing hundreds of unused photos.
+      const classified = classifyDecks(
+        text,
+        mediaUrls.map((_, i) => i),
+        titleMatcher,
+      );
+      const toPublish = classified.filter((c) => c.status === 'published');
+      if (toPublish.length === 0) {
+        await db
+          .update(posts)
+          .set({ rawText: text, authorHandle: author, fetchedAt: new Date() })
+          .where(eq(posts.id, post.id));
+        console.log(`${label} — 보류 (본문에 작품 없음, 링크만 보존)`);
+        await sleep(PACING_MS);
+        continue;
+      }
       const region = guessRegion(text);
       const scale = guessScale(text);
       const format = guessFormat(text);
-      const classified = classifyDecks(
-        text,
-        rows.map((r) => r.mediaIndex),
-        titleMatcher,
-      );
-      let published = 0;
-      for (const c of classified) {
-        const img = rows.find((r) => r.mediaIndex === c.mediaIndex)!;
+      for (const c of toPublish) {
+        const img = await storeOne(c.mediaIndex);
         await db.insert(decks).values({
           postId: post.id,
           mediaIndex: c.mediaIndex,
           imageId: img.id,
-          imageVerified: rows.length === 1,
+          imageVerified: toPublish.length === 1,
           titleId: c.titleId,
           climaxes: c.climaxes,
           region,
           scale,
           format,
-          status: c.status,
+          status: 'published',
           provenance: 'ai',
           sortAt: post.postedAt ?? new Date(),
         });
-        if (c.status === 'published') published++;
       }
-      console.log(`${label} ✓ 이미지 ${rows.length}장 · 자동게시 ${published} · 보류 ${classified.length - published}`);
-    } else {
-      const certain = postDecks.length === 1 && rows.length === 1;
-      for (const d of postDecks) {
-        const match = rows.find((r) => r.mediaIndex === d.mediaIndex);
-        if (!match) continue;
-        await db
-          .update(decks)
-          .set({ imageId: match.id, imageVerified: certain })
-          .where(eq(decks.id, d.id));
-      }
-      console.log(`${label} ✓ 이미지 ${rows.length}장 · 덱 ${postDecks.length}개${certain ? '' : ' (이미지-덱 매칭 미확정)'}`);
+      await db
+        .update(posts)
+        .set({ rawText: text, rawJson: raw as object, authorHandle: author, fetchedAt: new Date() })
+        .where(eq(posts.id, post.id));
+      console.log(`${label} ✓ 자동게시 ${toPublish.length}개 (이미지 ${toPublish.length}장)`);
+      await sleep(PACING_MS);
+      continue;
     }
+
+    // Sheet post: download every image and link to the pre-existing decks.
+    if (mediaUrls.length === 0) {
+      await db.update(posts).set({ rawText: text, fetchedAt: new Date() }).where(eq(posts.id, post.id));
+      await sleep(PACING_MS);
+      continue;
+    }
+    const rows = [];
+    for (let i = 0; i < mediaUrls.length; i++) rows.push(await storeOne(i));
+    await db
+      .update(posts)
+      .set({ rawText: text, rawJson: raw as object, authorHandle: author, fetchedAt: new Date() })
+      .where(eq(posts.id, post.id));
+
+    // Row order is our only guess for which photo is which deck — certain only
+    // for a single-deck, single-image post.
+    const certain = postDecks.length === 1 && rows.length === 1;
+    for (const d of postDecks) {
+      const match = rows.find((r) => r.mediaIndex === d.mediaIndex);
+      if (!match) continue;
+      await db.update(decks).set({ imageId: match.id, imageVerified: certain }).where(eq(decks.id, d.id));
+    }
+    console.log(`${label} ✓ 이미지 ${rows.length}장 · 덱 ${postDecks.length}개${certain ? '' : ' (매칭 미확정)'}`);
   } catch (err) {
     if (err instanceof RateLimited) {
       const waitMs = Math.max(5_000, err.resetAt.getTime() - Date.now() + 2_000);
