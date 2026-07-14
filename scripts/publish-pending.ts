@@ -1,14 +1,15 @@
 /**
- * Auto-publishes already-captured decks that are still needs_review.
+ * Re-classifies every auto-captured deck against the current text rules.
  *
- * Re-runs the text classification over every held deck: if the post text names a
- * title, the deck is placed and published; otherwise it stays held. Use it after
- * turning on auto-publish, to flush the backlog the review-mode capture created.
+ * Runs over all provenance=ai decks (held AND already auto-published), so
+ * tightening the classifier both flushes new publishable decks and CORRECTS ones
+ * a looser pass placed wrong. Human-approved decks (provenance=human) and the
+ * sheet import (sheet_import) are never touched.
  */
 import { and, eq, isNotNull } from 'drizzle-orm';
 
 import { closeDb, db } from '@/db';
-import { decks, images, posts, titleAliases } from '@/db/schema';
+import { decks, posts, titleAliases } from '@/db/schema';
 import { classifyDecks } from '@/lib/classify';
 import { AliasMatcher } from '@/lib/match';
 
@@ -19,8 +20,7 @@ const titleMatcher = new AliasMatcher(
   })),
 );
 
-// Held decks that have an image, grouped by post (so a trio is classified as a set).
-const held = await db
+const auto = await db
   .select({
     deckId: decks.id,
     postId: decks.postId,
@@ -29,14 +29,15 @@ const held = await db
   })
   .from(decks)
   .innerJoin(posts, eq(posts.id, decks.postId))
-  .where(and(eq(decks.status, 'needs_review'), isNotNull(decks.imageId)));
+  .where(and(eq(decks.provenance, 'ai'), isNotNull(decks.imageId)));
 
-const byPost = new Map<string, typeof held>();
-for (const d of held) byPost.set(d.postId, [...(byPost.get(d.postId) ?? []), d]);
+const byPost = new Map<string, typeof auto>();
+for (const d of auto) byPost.set(d.postId, [...(byPost.get(d.postId) ?? []), d]);
 
-console.log(`보류 중인 덱 ${held.length}개 (게시물 ${byPost.size}개) 재분류\n`);
+console.log(`자동 캡처 덱 ${auto.length}개 (게시물 ${byPost.size}개) 재분류\n`);
 
 let published = 0;
+let held = 0;
 for (const group of byPost.values()) {
   const text = group[0]!.text;
   const classified = classifyDecks(
@@ -45,14 +46,15 @@ for (const group of byPost.values()) {
     titleMatcher,
   );
   for (const c of classified) {
-    if (c.status !== 'published') continue;
     const deck = group.find((d) => d.mediaIndex === c.mediaIndex);
     if (!deck) continue;
     await db
       .update(decks)
-      .set({ titleId: c.titleId, climaxes: c.climaxes, status: 'published' })
+      // A now-ambiguous deck reverts to needs_review and drops off the site.
+      .set({ titleId: c.titleId, climaxes: c.climaxes, status: c.status })
       .where(eq(decks.id, deck.deckId));
-    published++;
+    if (c.status === 'published') published++;
+    else held++;
   }
 }
 
@@ -64,6 +66,6 @@ await db.execute(sql`
   )
 `);
 
-console.log(`✅ 자동 게시 ${published}개 · 남은 보류 ${held.length - published}개 (본문에 작품 없음 → 사진 판독 필요)`);
+console.log(`✅ 자동 게시 ${published}개 · 보류 ${held}개 (본문에 작품 없음/애매 → 사진 판독 필요)`);
 
 await closeDb();
