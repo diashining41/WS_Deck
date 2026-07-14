@@ -8,10 +8,20 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { db, rows as toRows } from '@/db';
-import { decks, images, posts } from '@/db/schema';
-import { climaxesFromText, guessFormat, guessRegion, guessScale } from '@/lib/heuristics';
+import { decks, images, posts, titleAliases } from '@/db/schema';
+import { classifyDecks } from '@/lib/classify';
+import { guessFormat, guessRegion, guessScale } from '@/lib/heuristics';
+import { AliasMatcher } from '@/lib/match';
 import { download, storeImage, type ImageKind } from '@/lib/media';
 import { decklogImageUrl, fetchTweet, RateLimited } from '@/lib/x';
+
+// Title matcher, built once from the DB aliases, to auto-place captured decks.
+const titleMatcher = new AliasMatcher(
+  (await db.select({ titleId: titleAliases.titleId, alias: titleAliases.alias }).from(titleAliases)).map((r) => ({
+    key: r.titleId,
+    alias: r.alias,
+  })),
+);
 
 const PACING_MS = 1200;
 const LIMIT = Number(process.env.LIMIT ?? Infinity);
@@ -125,29 +135,36 @@ for (const post of pending.slice(0, LIMIT)) {
       .where(eq(decks.postId, post.id));
 
     if (postDecks.length === 0) {
-      // A freshly captured post (from the poller) has no decks yet. Create one
-      // needs_review deck per image so it shows up in the review queue, with the
-      // country/scale/format guessed from the text for the reviewer to confirm.
+      // Freshly captured post. Auto-classify from the text: decks whose title is
+      // named in the post publish immediately; the rest are held (needs_review).
       const region = guessRegion(text);
       const scale = guessScale(text);
       const format = guessFormat(text);
-      const climaxes = climaxesFromText(text);
-      for (const r of rows) {
+      const classified = classifyDecks(
+        text,
+        rows.map((r) => r.mediaIndex),
+        titleMatcher,
+      );
+      let published = 0;
+      for (const c of classified) {
+        const img = rows.find((r) => r.mediaIndex === c.mediaIndex)!;
         await db.insert(decks).values({
           postId: post.id,
-          mediaIndex: r.mediaIndex,
-          imageId: r.id,
-          imageVerified: rows.length === 1, // single image ⇒ binding is certain
-          climaxes,
+          mediaIndex: c.mediaIndex,
+          imageId: img.id,
+          imageVerified: rows.length === 1,
+          titleId: c.titleId,
+          climaxes: c.climaxes,
           region,
           scale,
           format,
-          status: 'needs_review',
+          status: c.status,
           provenance: 'ai',
           sortAt: post.postedAt ?? new Date(),
         });
+        if (c.status === 'published') published++;
       }
-      console.log(`${label} ✓ 이미지 ${rows.length}장 · 검수덱 ${rows.length}개 생성 (${region}/${scale}/${format})`);
+      console.log(`${label} ✓ 이미지 ${rows.length}장 · 자동게시 ${published} · 보류 ${classified.length - published}`);
     } else {
       const certain = postDecks.length === 1 && rows.length === 1;
       for (const d of postDecks) {
