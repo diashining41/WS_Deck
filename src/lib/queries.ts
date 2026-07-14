@@ -9,6 +9,8 @@ export interface TitleSummary {
   code: string;
   nameKo: string;
   deckCount: number;
+  /** Published-deck count per ban-list season, filled by the static export for the home page. */
+  seasons?: Record<string, number>;
 }
 
 /**

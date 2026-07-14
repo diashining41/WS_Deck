@@ -10,6 +10,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 
 import { closeDb } from '@/db';
 import { getStats, listDecksForTitle, listTitlesWithDecks } from '@/lib/queries';
+import { seasonOf } from '@/lib/seasons';
 
 const OUT = 'src/generated';
 mkdirSync(OUT, { recursive: true });
@@ -23,6 +24,13 @@ for (const t of titles) {
   const decks = await listDecksForTitle(t.id);
   byTitle[t.code] = decks;
   deckTotal += decks.length;
+  // Per-season deck counts, so the home page can group titles by season cheaply.
+  const seasons: Record<string, number> = {};
+  for (const d of decks) {
+    const key = seasonOf(d.sortAt)?.key;
+    if (key) seasons[key] = (seasons[key] ?? 0) + 1;
+  }
+  t.seasons = seasons;
 }
 
 const snapshot = { generatedAt: new Date().toISOString(), stats, titles, byTitle };

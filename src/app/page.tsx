@@ -1,6 +1,6 @@
 import { allTitles, stats as getStats } from '@/lib/static-data';
 
-import { TitleGrid } from './title-grid';
+import { SeasonHome } from './season-home';
 
 // Reads the committed snapshot, so this prerenders to a static page at build.
 export default function HomePage() {
@@ -19,7 +19,7 @@ export default function HomePage() {
         </p>
       </div>
 
-      <TitleGrid titles={titles} />
+      <SeasonHome titles={titles} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { Climax } from '@/db/schema';
 import { CLIMAX_ORDER, FORMAT_LABEL, REGION_LABEL, SCALE_LABEL, SOURCE_LABEL, formatDate } from '@/lib/labels';
@@ -38,6 +38,25 @@ function matches(d: DeckCard, f: Facets): boolean {
 export function DeckList({ decks }: { decks: DeckCard[] }) {
   const [f, setF] = useState<Facets>(EMPTY);
   const [lightbox, setLightbox] = useState<DeckCard | null>(null);
+
+  // Which season panels are expanded. Default: the newest season that actually
+  // has decks here. If the home page linked in with ?season=, open that one too
+  // (read on mount so static prerender and hydration stay identical).
+  const [openSeasons, setOpenSeasons] = useState<Set<string>>(() => {
+    for (const s of SEASONS) if (decks.some((d) => seasonOf(d.sortAt)?.key === s.key)) return new Set([s.key]);
+    return new Set();
+  });
+  useEffect(() => {
+    const season = new URLSearchParams(window.location.search).get('season');
+    if (season) setOpenSeasons(new Set([season]));
+  }, []);
+  const toggleSeason = (key: string) =>
+    setOpenSeasons((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   const shown = useMemo(() => decks.filter((d) => matches(d, f)), [decks, f]);
 
@@ -149,35 +168,35 @@ export function DeckList({ decks }: { decks: DeckCard[] }) {
         ) : null}
       </div>
 
-      <div className="space-y-8">
-        {SEASONS.map((s) => {
-          const list = bySeason.get(s.key);
+      <div className="space-y-4">
+        {[
+          ...SEASONS.map((s) => ({ key: s.key, label: s.label, range: seasonRange(s.key) })),
+          { key: 'unknown', label: '미분류', range: '개정 이전' },
+        ].map(({ key, label, range }) => {
+          const list = bySeason.get(key);
           if (!list || list.length === 0) return null;
+          // While filtering, force every matching season open so no result hides.
+          const isOpen = !!active || openSeasons.has(key);
           return (
-            <section key={s.key}>
-              <SeasonHeader label={s.label} range={seasonRange(s.key)} count={list.length} />
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {list.map((d) => (
-                  <DeckCardView key={d.id} deck={d} onOpen={() => setLightbox(d)} />
-                ))}
-              </div>
+            <section key={key} className="overflow-hidden rounded-xl border border-[var(--line)]">
+              <SeasonHeader
+                label={label}
+                range={range}
+                count={list.length}
+                isOpen={isOpen}
+                collapsible={!active}
+                onToggle={() => toggleSeason(key)}
+              />
+              {isOpen && (
+                <div className="grid grid-cols-1 gap-4 border-t border-[var(--line)] p-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {list.map((d) => (
+                    <DeckCardView key={d.id} deck={d} onOpen={() => setLightbox(d)} />
+                  ))}
+                </div>
+              )}
             </section>
           );
         })}
-        {(() => {
-          const list = bySeason.get('unknown');
-          if (!list || list.length === 0) return null;
-          return (
-            <section key="unknown">
-              <SeasonHeader label="미분류" range="개정 이전" count={list.length} />
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {list.map((d) => (
-                  <DeckCardView key={d.id} deck={d} onOpen={() => setLightbox(d)} />
-                ))}
-              </div>
-            </section>
-          );
-        })()}
       </div>
 
       {shown.length === 0 && (
@@ -189,14 +208,38 @@ export function DeckList({ decks }: { decks: DeckCard[] }) {
   );
 }
 
-function SeasonHeader({ label, range, count }: { label: string; range: string; count: number }) {
+function SeasonHeader({
+  label,
+  range,
+  count,
+  isOpen,
+  collapsible,
+  onToggle,
+}: {
+  label: string;
+  range: string;
+  count: number;
+  isOpen: boolean;
+  collapsible: boolean;
+  onToggle: () => void;
+}) {
   return (
-    <div className="mb-3 flex items-center gap-2">
+    <button
+      onClick={collapsible ? onToggle : undefined}
+      disabled={!collapsible}
+      className="flex w-full items-center gap-2 bg-[var(--panel)] px-4 py-3 text-left transition enabled:hover:bg-[var(--panel-2)] disabled:cursor-default"
+    >
+      <span
+        className={`shrink-0 text-[var(--muted)] transition-transform ${isOpen ? 'rotate-90' : ''} ${collapsible ? '' : 'opacity-0'}`}
+        aria-hidden
+      >
+        ▶
+      </span>
       <span className="h-4 w-1 shrink-0 rounded-full bg-[var(--accent)]" />
       <h2 className="text-sm font-semibold">{label}</h2>
       <span className="text-xs text-[var(--muted)]">{range}</span>
       <span className="ml-auto text-[11px] tabular-nums text-[var(--muted)]">{count}덱</span>
-    </div>
+    </button>
   );
 }
 
