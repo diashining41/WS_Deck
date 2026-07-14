@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "next build",
+  "//": "npm run build, not next build: the prebuild hook downloads the data snapshot from R2 (it is gitignored, so the repo Vercel clones does not contain it). Calling next build directly skips the hook and the build dies on 'Cannot resolve @/generated/data.json'.",
+  "buildCommand": "npm run build",
   "installCommand": "npm install"
 }
