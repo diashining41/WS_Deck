@@ -5,7 +5,13 @@ import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
 import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
+import { loadEnv } from '@/lib/env';
+
 import * as schema from './schema';
+
+// Pull DATABASE_URL from .env.local before deciding PGlite vs Neon, so every
+// script picks up the cloud DB without needing it exported in the shell.
+loadEnv();
 
 /**
  * Local dev runs on PGlite — real Postgres compiled to WASM, so enum arrays,
