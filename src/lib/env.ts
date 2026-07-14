@@ -15,7 +15,13 @@ export function loadEnv(): void {
 
   for (const file of ['.env.local', '.env']) {
     if (!existsSync(file)) continue;
-    for (const line of readFileSync(file, 'utf8').split('\n')) {
+    // A Windows editor (PowerShell Set-Content, Notepad) does two things that
+    // silently break parsing: it prepends a UTF-8 BOM (﻿, not \s, so it glues to
+    // the first key) and it writes CRLF line endings. Splitting on \n alone
+    // leaves a trailing \r on every line, and the value regex's `$` then fails to
+    // match — so DATABASE_URL never loads, the driver falls back to the local
+    // PGlite DB, and every script quietly runs against the wrong data. Strip both.
+    for (const line of readFileSync(file, 'utf8').replace(/^﻿/, '').split(/\r?\n/)) {
       const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/i);
       if (!m?.[1]) continue;
       // Don't override a variable the shell already set.

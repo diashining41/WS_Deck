@@ -154,7 +154,10 @@ export async function extractPost(input: ExtractInput, titles: TitleRow[]): Prom
       output: u.output_tokens,
       cacheRead,
       cacheWrite,
-      costUsd: u.input_tokens * IN + cacheRead * IN * 0.1 + cacheWrite * IN * 1.25 + u.output_tokens * OUT,
+      // Cache writes bill at 2x on the 1h TTL requested above — the 1.25x figure
+      // is the 5-minute default. Getting this wrong understates the write turn by
+      // 37.5%, which is exactly the number a budget decision would be made on.
+      costUsd: u.input_tokens * IN + cacheRead * IN * 0.1 + cacheWrite * IN * 2 + u.output_tokens * OUT,
     },
   };
 }

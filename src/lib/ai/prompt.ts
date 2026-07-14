@@ -14,20 +14,27 @@ export interface TitleRow {
  * reordered alias list silently drops the cache to 0% and we pay full price
  * forever without an error to tell us.
  *
+ * That is not hypothetical: the caller reads aliases with a plain SELECT and no
+ * ORDER BY, and Postgres does not promise row order without one. Both the order
+ * AND the membership of a `.slice(0, 6)` taken from that result can shift
+ * between runs, rewriting bytes inside the cached prefix. So the sort happens
+ * HERE, where the bytes are actually produced — a caller cannot break it.
+ *
  * Opus 4.8 will not cache a prefix shorter than 4096 tokens, and it fails
  * silently when it's under. The title master (148 works with aliases) puts us
- * comfortably over; extract.ts asserts cache_read_input_tokens > 0 on the second
- * call rather than trusting that.
+ * comfortably over — but pass a filtered title list and the cache quietly dies,
+ * so extract.ts reports cacheRead and eval.ts flags a run that never read it.
  */
 export function buildSystemPrompt(titles: TitleRow[]): string {
   const climaxTable = Object.entries(CLIMAX_ALIASES)
-    .map(([climax, aliases]) => `  ${climax}\t${aliases.join(', ')}`)
+    .map(([climax, aliases]) => `  ${climax}\t${[...aliases].sort().join(', ')}`)
     .join('\n');
 
-  // Sorted, so the bytes are identical on every request.
+  // Sorted — titles AND the aliases inside each one — so the bytes are identical
+  // on every request. Sorting only the outer list is not enough.
   const titleTable = [...titles]
     .sort((a, b) => a.code.localeCompare(b.code))
-    .map((t) => `  ${t.code}\t${t.nameKo}\t${t.aliases.join(', ')}`)
+    .map((t) => `  ${t.code}\t${t.nameKo}\t${[...t.aliases].sort().join(', ')}`)
     .join('\n');
 
   return `당신은 바이스슈발츠(Weiß Schwarz) TCG의 **대회 덱 레시피**를 게시물에서 추출하는 전문가입니다.
