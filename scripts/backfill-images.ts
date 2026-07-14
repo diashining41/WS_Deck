@@ -7,7 +7,7 @@
  */
 import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { db, rows as toRows } from '@/db';
 import { decks, images, posts, titleAliases } from '@/db/schema';
@@ -88,6 +88,19 @@ const LIMIT = Number(process.env.LIMIT ?? Infinity);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * What still needs fetching.
+ *
+ * "Has no image" is the wrong question — most posts without an image will never
+ * have one: the tweet was deleted, or it was a text-only post, or it's a naver /
+ * wstcg link whose adapter was never written. Asking that question daily meant
+ * the cloud job burned its whole budget re-fetching ~700 hopeless posts and
+ * never reached the new ones.
+ *
+ * fetched_at answers it properly: it is set once a post has actually been
+ * resolved (image stored, no media, or tweet gone) and left NULL when the fetch
+ * threw — so errors are still retried, and settled posts are never touched again.
+ */
 const allPending = await db
   .select({
     id: posts.id,
@@ -98,7 +111,14 @@ const allPending = await db
   })
   .from(posts)
   .leftJoin(images, eq(images.postId, posts.id))
-  .where(isNull(images.id))
+  .where(
+    and(
+      isNull(images.id),
+      isNull(posts.fetchedAt),
+      // Sources we can actually fetch images from today.
+      inArray(posts.source, ['x', 'decklog']),
+    ),
+  )
   .groupBy(posts.id)
   // Stable order, so the shard split is deterministic across workers.
   .orderBy(posts.id);
@@ -106,7 +126,7 @@ const allPending = await db
 const pending = allPending.filter((_, i) => i % SHARD_TOTAL === SHARD_ID);
 
 console.log(
-  `이미지가 없는 게시물 ${allPending.length}개` +
+  `가져올 게시물 ${allPending.length}개` +
     (SHARD_TOTAL > 1 ? ` · 이 샤드(${SHARD_ID}/${SHARD_TOTAL}) 담당 ${pending.length}개` : '') +
     '\n',
 );
