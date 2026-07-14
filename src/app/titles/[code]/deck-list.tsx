@@ -6,6 +6,7 @@ import type { Climax } from '@/db/schema';
 import { CLIMAX_ORDER, FORMAT_LABEL, REGION_LABEL, SCALE_LABEL, SOURCE_LABEL, formatDate } from '@/lib/labels';
 import { mediaUrl } from '@/lib/media-url';
 import type { DeckCard } from '@/lib/queries';
+import { SEASONS, seasonOf, seasonRange } from '@/lib/seasons';
 
 type Facets = {
   region: Set<string>;
@@ -39,6 +40,19 @@ export function DeckList({ decks }: { decks: DeckCard[] }) {
   const [lightbox, setLightbox] = useState<DeckCard | null>(null);
 
   const shown = useMemo(() => decks.filter((d) => matches(d, f)), [decks, f]);
+
+  // Group the filtered decks by ban-list season. Order follows SEASONS
+  // (newest first); anything older than our oldest boundary lands in "미분류".
+  const bySeason = useMemo(() => {
+    const map = new Map<string, DeckCard[]>();
+    for (const d of shown) {
+      const key = seasonOf(d.sortAt)?.key ?? 'unknown';
+      const list = map.get(key);
+      if (list) list.push(d);
+      else map.set(key, [d]);
+    }
+    return map;
+  }, [shown]);
 
   // Counts are free here because the whole list is already in memory — no query
   // per facet click, no spinner, and the numbers update live as you filter.
@@ -135,10 +149,35 @@ export function DeckList({ decks }: { decks: DeckCard[] }) {
         ) : null}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {shown.map((d) => (
-          <DeckCardView key={d.id} deck={d} onOpen={() => setLightbox(d)} />
-        ))}
+      <div className="space-y-8">
+        {SEASONS.map((s) => {
+          const list = bySeason.get(s.key);
+          if (!list || list.length === 0) return null;
+          return (
+            <section key={s.key}>
+              <SeasonHeader label={s.label} range={seasonRange(s.key)} count={list.length} />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {list.map((d) => (
+                  <DeckCardView key={d.id} deck={d} onOpen={() => setLightbox(d)} />
+                ))}
+              </div>
+            </section>
+          );
+        })}
+        {(() => {
+          const list = bySeason.get('unknown');
+          if (!list || list.length === 0) return null;
+          return (
+            <section key="unknown">
+              <SeasonHeader label="미분류" range="개정 이전" count={list.length} />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {list.map((d) => (
+                  <DeckCardView key={d.id} deck={d} onOpen={() => setLightbox(d)} />
+                ))}
+              </div>
+            </section>
+          );
+        })()}
       </div>
 
       {shown.length === 0 && (
@@ -147,6 +186,17 @@ export function DeckList({ decks }: { decks: DeckCard[] }) {
 
       {lightbox && <Lightbox deck={lightbox} onClose={() => setLightbox(null)} />}
     </>
+  );
+}
+
+function SeasonHeader({ label, range, count }: { label: string; range: string; count: number }) {
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <span className="h-4 w-1 shrink-0 rounded-full bg-[var(--accent)]" />
+      <h2 className="text-sm font-semibold">{label}</h2>
+      <span className="text-xs text-[var(--muted)]">{range}</span>
+      <span className="ml-auto text-[11px] tabular-nums text-[var(--muted)]">{count}덱</span>
+    </div>
   );
 }
 
