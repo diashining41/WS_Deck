@@ -300,6 +300,9 @@ const [{ n: verified } = { n: 0 }] = toRows<{ n: number }>(
 );
 
 console.log('');
+// ASCII completion marker: the supervisor distinguishes "ran to the end" from
+// "was killed" by this line, and restarts shards that never printed it.
+console.log('BACKFILL_DONE');
 console.log(`✅ 이미지 ${stored}장 저장`);
 console.log(`   덱 ${withImage}개에 이미지 연결 (그중 ${verified}개는 매칭 확정)`);
 if (gone) console.log(`   삭제된 트윗 ${gone}건`);
