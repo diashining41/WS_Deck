@@ -26,11 +26,31 @@ const BLAU_TEXT = /ヴァイスシュヴァルツ\s*ブラウ|WSブラウ|ブラ
 /** Same trap on the other side: ロゼッタ is a Granblue character, not the game. */
 const ROSE_TEXT = /ヴァイスシュヴァルツ\s*ロゼ|WSロゼ|ロゼ(?!ッタ)|로제|\bWSR\b/i;
 
-export type Game = 'WS' | 'ROSE' | 'BLAU';
+/**
+ * Love Live! Official Card Game (ラブライブ！オフィシャルカードゲーム, "ラブカ") is a
+ * SEPARATE Bushiroad TCG — not a WS spin-off. It shares the Love Live IP, so its
+ * tournament posts name works we genuinely carry in WS (μ's, Aqours, 蓮ノ空, …)
+ * and would otherwise be auto-placed onto those title pages. Eight had already
+ * landed on the 러브라이브본가 page this way — μ's OCG shop wins masquerading as WS.
+ *
+ * The tell is the game's own name: オフィシャルカードゲーム / ラブカ / ラブライブカードゲーム,
+ * which a WS post never uses for itself. The trap is that a WS player sometimes
+ * drops "ラブカ" in a *comment* ("ラブカ楽しいです") on a genuine ヴァイス post, so a
+ * bare ラブカ match alone would wrongly delete real WS decks. Hence: an OCG name
+ * AND the absence of any base-WS marker. Checked after ROSE/BLAU, whose posts
+ * carry シュヴァルツ (a WS marker) yet must not be read as base WS.
+ */
+const LLOCG_TEXT =
+  /ラブライブ[！!]?\s*(?:シリーズ)?\s*(?:の)?オフィシャルカードゲーム|ラブライブ\s*カードゲーム|ラブカ|러브라이브\s*(?:시리즈)?\s*(?:오피셜|공식)?\s*카드\s*게임|러브카/i;
+/** Any marker that pins a post to base Weiss Schwarz — its presence overrides the OCG guess. */
+const WS_TEXT = /ヴァイス|ワイス|シュヴァルツ|바이스|와이스|\bWS\b|ws\dtcg|wei[sß]/i;
+
+export type Game = 'WS' | 'ROSE' | 'BLAU' | 'LLOCG';
 
 /** What game is this post about, judged from its text alone. */
 export function gameFromText(text: string): Game {
   if (ROSE_TEXT.test(text)) return 'ROSE';
   if (BLAU_TEXT.test(text)) return 'BLAU';
+  if (LLOCG_TEXT.test(text) && !WS_TEXT.test(text)) return 'LLOCG';
   return 'WS';
 }

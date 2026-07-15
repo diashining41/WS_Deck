@@ -1,4 +1,5 @@
 import type { Climax } from '@/db/schema';
+import { gameFromText } from '@/lib/game';
 import { climaxesFromText } from '@/lib/heuristics';
 import type { TitleMatcher } from '@/lib/match';
 
@@ -45,6 +46,13 @@ export function classifyDecks(
   mediaIndexes: number[],
   titleMatcher: TitleMatcher,
 ): DeckClassification[] {
+  // A different card game entirely — Rosé, Blau, or the Love Live Official Card
+  // Game — must never be auto-placed onto a WS title page. The poll gate drops
+  // most at ingest, but this is the choke point that also catches posts stored
+  // before the gate existed and any whose game only shows in the fetched text.
+  // Hold rather than publish: invisible, and recoverable if ever misjudged.
+  if (gameFromText(text) !== 'WS') return hold(mediaIndexes);
+
   // A match video is two decks in one post — never auto-place it.
   if (MATCH_VIDEO.test(text)) return hold(mediaIndexes);
 

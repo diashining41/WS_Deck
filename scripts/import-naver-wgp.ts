@@ -14,6 +14,7 @@ import { and, eq, sql } from 'drizzle-orm';
 
 import { closeDb, db } from '@/db';
 import { climaxAliases, decks, images, posts, titleAliases, type Climax } from '@/db/schema';
+import { gameFromText } from '@/lib/game';
 import { AliasMatcher } from '@/lib/match';
 import { download, storeImage } from '@/lib/media';
 import { fetchArticle, NaverAuthRequired } from '@/lib/naver';
@@ -82,6 +83,11 @@ for (const board of BOARDS) {
   console.log(`\n■ ${board.name} 덱 레시피 — 글 ${arts.length}개`);
 
   for (const a of arts) {
+    // Bushiroad also runs Love Live OCG events; keep any non-WS game off WS pages.
+    if (gameFromText(a.subject) !== 'WS') {
+      skipped++;
+      continue;
+    }
     const m = a.subject.match(/\[([^\]]+)\]/);
     if (!m?.[1]) {
       skipped++;
