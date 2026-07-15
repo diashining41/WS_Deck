@@ -70,6 +70,16 @@ jobs:
           LIMIT: 400
         run: npm run backfill:images
 
+      # Cookie-free: mirror the official cafe's 대회 결과 board as a dated link
+      # archive (link + date + subject only; no deck). Best-effort — if naver
+      # blocks the ephemeral runner it must not abort the deck pipeline, so
+      # continue-on-error. Daily only needs the newest pages.
+      - name: 공식 카페 대회결과 링크 수집 (날짜별 아카이브)
+        continue-on-error: true
+        env:
+          PAGES: 4
+        run: npm run import:naver-archive -- --commit
+
       - name: 정적 스냅샷 갱신
         run: npm run export:static
 

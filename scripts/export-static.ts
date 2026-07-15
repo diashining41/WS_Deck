@@ -9,7 +9,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 
 import { closeDb } from '@/db';
-import { getStats, listDecksForTitle, listTitlesWithDecks } from '@/lib/queries';
+import { getStats, listCafeArchive, listDecksForTitle, listTitlesWithDecks } from '@/lib/queries';
 import { seasonOf } from '@/lib/seasons';
 
 const OUT = 'src/generated';
@@ -33,8 +33,10 @@ for (const t of titles) {
   t.seasons = seasons;
 }
 
+const cafeArchive = await listCafeArchive();
+
 const generatedAt = new Date().toISOString();
-const snapshot = { generatedAt, stats, titles, byTitle };
+const snapshot = { generatedAt, stats, titles, byTitle, cafeArchive };
 const json = JSON.stringify(snapshot);
 writeFileSync(`${OUT}/data.json`, json);
 
@@ -52,7 +54,7 @@ writeFileSync(
 
 const kb = (Buffer.byteLength(json) / 1024).toFixed(0);
 console.log(`정적 스냅샷 생성: ${OUT}/data.json  (${kb}KB)`);
-console.log(`  타이틀 ${titles.length}종 · 덱 ${deckTotal}개 · 미리보기 ${stats.images}개`);
+console.log(`  타이틀 ${titles.length}종 · 덱 ${deckTotal}개 · 미리보기 ${stats.images}개 · 카페 아카이브 ${cafeArchive.length}건`);
 console.log(`  스냅샷은 R2 로 업로드됩니다 (npm run upload:r2) — git 에는 메타 파일만 커밋됩니다`);
 
 await closeDb();

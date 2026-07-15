@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import { db, rows } from '@/db';
-import { decks, images, posts, titles } from '@/db/schema';
+import { cafeArchive, decks, images, posts, titles } from '@/db/schema';
 import type { Climax } from '@/db/schema';
 
 export interface TitleSummary {
@@ -222,6 +222,53 @@ export async function listReviewQueue(limit = 50): Promise<ReviewItem[]> {
       reasons,
     } as ReviewItem;
   });
+}
+
+export interface CafeArchiveItem {
+  articleId: string;
+  subject: string;
+  boardName: string;
+  url: string;
+  /** YYYY-MM-DD, in KST — this board is a Korean-community feed. */
+  date: string;
+}
+
+/**
+ * The official cafe's 대회 결과 board as a flat, newest-first link list.
+ *
+ * These carry no 작품 (the subject is a shop name and the body is login-gated),
+ * so they live in their own table and surface only on the date archive, never on
+ * a title page. Resilient to a missing table: a fresh local PGlite without the
+ * migration just yields an empty archive rather than breaking the whole export.
+ */
+export async function listCafeArchive(): Promise<CafeArchiveItem[]> {
+  try {
+    const r = await db
+      .select({
+        articleId: cafeArchive.articleId,
+        subject: cafeArchive.subject,
+        boardName: cafeArchive.boardName,
+        url: cafeArchive.url,
+        postedAt: cafeArchive.postedAt,
+      })
+      .from(cafeArchive)
+      .orderBy(desc(cafeArchive.postedAt), desc(cafeArchive.id));
+
+    return r.map((x) => {
+      const d = x.postedAt instanceof Date ? x.postedAt : new Date(x.postedAt);
+      // KST day: the cafe timestamps are epoch ms; render the Korean calendar date.
+      const kst = new Date(d.getTime() + 9 * 3600 * 1000);
+      return {
+        articleId: x.articleId,
+        subject: x.subject,
+        boardName: x.boardName,
+        url: x.url,
+        date: kst.toISOString().slice(0, 10),
+      };
+    });
+  } catch {
+    return [];
+  }
 }
 
 export async function getStats(): Promise<{ decks: number; posts: number; titles: number; images: number }> {

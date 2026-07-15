@@ -270,6 +270,33 @@ export const reviewQueue = pgTable(
   (t) => [index('review_queue_open_idx').on(t.resolvedAt, t.priority)],
 );
 
+/* ----------------------------------------------------------- cafe archive */
+
+/**
+ * Date-ordered index of the official Naver cafe's 대회 결과 게시판.
+ *
+ * Deliberately NOT posts/decks: that board's body is login-gated (we abandoned
+ * the cookie), and its subject carries the shop name, not the 작품 — so these can
+ * never be placed on a title page. All we can get cookie-free is the list: link,
+ * date, subject. This table holds exactly that, so the site can show a
+ * chronological "official cafe results" archive that links out. A separate table
+ * keeps them out of the deck stats and away from the image backfill.
+ */
+export const cafeArchive = pgTable(
+  'cafe_archive',
+  {
+    id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+    articleId: text('article_id').notNull(),
+    boardId: integer('board_id').notNull(),
+    boardName: text('board_name').notNull().default(''),
+    subject: text('subject').notNull(),
+    url: text('url').notNull(),
+    postedAt: timestamp('posted_at', { withTimezone: true }).notNull(),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('cafe_archive_article_uq').on(t.articleId), index('cafe_archive_date_idx').on(t.postedAt.desc())],
+);
+
 export type Title = typeof titles.$inferSelect;
 export type Post = typeof posts.$inferSelect;
 export type Image = typeof images.$inferSelect;

@@ -1,4 +1,4 @@
-import type { DeckCard, TitleSummary } from '@/lib/queries';
+import type { CafeArchiveItem, DeckCard, TitleSummary } from '@/lib/queries';
 
 /**
  * The public site's data source.
@@ -13,6 +13,7 @@ interface Snapshot {
   stats: { decks: number; posts: number; titles: number; images: number };
   titles: TitleSummary[];
   byTitle: Record<string, DeckCard[]>;
+  cafeArchive?: CafeArchiveItem[];
 }
 
 // Static import so it's baked into the build and there's no runtime file read.
@@ -34,6 +35,10 @@ export function decksForCode(code: string): DeckCard[] {
 
 export function stats() {
   return data.stats;
+}
+
+export function cafeArchive(): CafeArchiveItem[] {
+  return data.cafeArchive ?? [];
 }
 
 export function generatedAt(): string {

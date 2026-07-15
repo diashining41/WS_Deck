@@ -26,6 +26,7 @@
     "import:naver": "tsx scripts/import-naver-wgp.ts",
     "revive:held": "tsx scripts/revive-held.ts",
     "import:ws-titles": "tsx scripts/import-ws-titles.ts",
+    "import:naver-archive": "tsx scripts/import-naver-archive.ts",
     "purge:nonws": "tsx scripts/purge-nonws.ts"
   },
   "dependencies": {

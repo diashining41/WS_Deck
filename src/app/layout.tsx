@@ -17,10 +17,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/" className="text-lg font-bold tracking-tight">
               바이스슈발츠 <span className="text-[var(--accent)]">덱 레시피</span>
             </Link>
-            <span className="text-xs text-[var(--muted)]">대회 레시피만 모읍니다</span>
+            <span className="hidden text-xs text-[var(--muted)] sm:inline">대회 레시피만 모읍니다</span>
+            <Link
+              href="/archive"
+              className="ml-auto text-xs text-[var(--muted)] hover:text-[var(--accent)]"
+            >
+              날짜별 대회결과
+            </Link>
             <Link
               href="/admin/review"
-              className="ml-auto text-xs text-[var(--muted)] hover:text-[var(--accent)]"
+              className="text-xs text-[var(--muted)] hover:text-[var(--accent)]"
             >
               검수
             </Link>
