@@ -233,4 +233,14 @@ export const TITLE_ALIASES_KO: Record<string, string[]> = {
   DDD: ['단다단'],
   NIK: ['니케'],
   GA: ['GA문고'],
+  // Korean cafe (WGP/BCF) spellings that differ from our master name.
+  CSM: ['체인소맨', '체인쏘맨', '체소맨'],
+  AGS: ['앨리스기어', '아리스기어', '앨기어'],
+  VS: ['비비스토', '비비드스트라이크'],
+  TL: ['트러블', '토러브루', '투러브루'],
+  TRV: ['도리벤', '도쿄리벤저스'],
+  TSK: ['전생했더니슬라임', '전생슬라임', '전슬'],
+  RSL: ['레뷰', '레뷰스타라이트', '스타라이트'],
+  LNJ: ['니지동', '니지가키'],
+  LSS: ['선샤인', '러브라이브선샤인', '아쿠아'],
 };
