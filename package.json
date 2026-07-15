@@ -24,7 +24,8 @@
     "predev": "node scripts/fetch-snapshot.mjs --if-missing",
     "fetch:snapshot": "node scripts/fetch-snapshot.mjs",
     "import:naver": "tsx scripts/import-naver-wgp.ts",
-    "revive:held": "tsx scripts/revive-held.ts"
+    "revive:held": "tsx scripts/revive-held.ts",
+    "import:ws-titles": "tsx scripts/import-ws-titles.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
