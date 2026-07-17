@@ -89,6 +89,24 @@ const LIMIT = Number(process.env.LIMIT ?? Infinity);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * A published deck with no image renders an empty card, but this site exists to
+ * show deck composition. So hold (needs_review) any of this post's published
+ * decks that ended up without an image — the tweet was deleted, had no media, or
+ * its photo didn't match this deck. Reversible: a later fetch can still attach an
+ * image and republish. (naver never reaches this backfill; a decklog deck always
+ * gets its render, so this only ever catches genuinely image-less rows.)
+ */
+async function holdImagelessDecks(postId: string): Promise<number> {
+  const held = toRows<{ id: string }>(
+    await db.execute(sql`
+      UPDATE decks SET status='needs_review'
+      WHERE post_id=${postId} AND status='published' AND image_id IS NULL
+      RETURNING id`),
+  );
+  return held.length;
+}
+
+/**
  * What still needs fetching.
  *
  * "Has no image" is the wrong question — most posts without an image will never
@@ -151,7 +169,8 @@ for (const post of pending.slice(0, LIMIT)) {
       const tweet = await fetchTweet(post.sourceId);
       if (!tweet) {
         gone++;
-        console.log(`${label} ✗ 삭제됨`);
+        const held = await holdImagelessDecks(post.id);
+        console.log(`${label} ✗ 삭제됨${held ? ` · 이미지 없는 덱 ${held}개 보류` : ''}`);
         await db.update(posts).set({ fetchedAt: new Date() }).where(eq(posts.id, post.id));
         await sleep(PACING_MS);
         continue;
@@ -276,7 +295,9 @@ for (const post of pending.slice(0, LIMIT)) {
 
     // Sheet post: download every image and link to the pre-existing decks.
     if (mediaUrls.length === 0) {
+      const held = await holdImagelessDecks(post.id);
       await db.update(posts).set({ rawText: text, fetchedAt: new Date() }).where(eq(posts.id, post.id));
+      console.log(`${label} — 미디어 없음${held ? ` · 덱 ${held}개 보류` : ''}`);
       await sleep(PACING_MS);
       continue;
     }
@@ -295,7 +316,11 @@ for (const post of pending.slice(0, LIMIT)) {
       if (!match) continue;
       await db.update(decks).set({ imageId: match.id, imageVerified: certain }).where(eq(decks.id, d.id));
     }
-    console.log(`${label} ✓ 이미지 ${rows.length}장 · 덱 ${postDecks.length}개${certain ? '' : ' (매칭 미확정)'}`);
+    // Any deck whose photo never arrived (no matching media_index) is held.
+    const held = await holdImagelessDecks(post.id);
+    console.log(
+      `${label} ✓ 이미지 ${rows.length}장 · 덱 ${postDecks.length}개${certain ? '' : ' (매칭 미확정)'}${held ? ` · 이미지 없는 ${held}개 보류` : ''}`,
+    );
   } catch (err) {
     if (err instanceof RateLimited) {
       const waitMs = Math.max(5_000, err.resetAt.getTime() - Date.now() + 2_000);
@@ -311,6 +336,14 @@ for (const post of pending.slice(0, LIMIT)) {
 
   await sleep(PACING_MS);
 }
+
+// This run auto-published new decks and held image-less ones; titles.deck_count
+// (which the home page reads) must reflect both. Every other ingest script does
+// this recompute — backfill was the one that didn't, so counts drifted.
+await db.execute(sql`
+  UPDATE titles SET deck_count = (
+    SELECT count(*) FROM decks WHERE decks.title_id = titles.id AND decks.status = 'published'
+  )`);
 
 const [{ n: withImage } = { n: 0 }] = toRows<{ n: number }>(
   await db.execute(sql`SELECT count(*)::int AS n FROM decks WHERE image_id IS NOT NULL`),
