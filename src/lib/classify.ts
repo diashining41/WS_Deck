@@ -31,6 +31,24 @@ export interface DeckClassification {
 
 const MATCH_VIDEO = /対戦動画|試合動画|対戦\s*(?:動画|映像)/;
 
+/**
+ * A shop's sales / restock / buylist / open-for-business post — a card image but
+ * NOT a tournament result. "【販売情報】8門アズレンのデッキ" or "本日発売！GA文庫入荷"
+ * carry a 작품 and would auto-publish as a deck, so they must be held. The tell is
+ * a shop-ad phrase with NO tournament-result signal; a post that reports a winner
+ * ("優勝", "3位", 使用デッキ, レシピ) is a real result and passes even if it also
+ * plugs the next event.
+ */
+const RESULT_SIGNAL =
+  /優勝|準優勝|入賞|\d\s*位|上位|ベスト\d|使用(?:デッキ|構築|リスト|タイトル)?|使っ|考案|デッキ名|デッキレシピ|レシピ|結果|우승|입상|사용\s*덱|사용덱|先鋒|中堅|大将|全勝|\d\s*[-‐]\s*\d|使\/|勝者|Top\s*\d/i;
+const SHOP_AD =
+  /【?\s*販売情報\s*】?|【?\s*入荷情報\s*】?|デッキ販売|買取価格|買取情報|在庫補充|価格調整|価格改定|本日発売|明日発売|発売開始|発売予定|オープンしました|営業(?:中|です|時間|しております)|商品ページ|通販(?:ページ|サイト)|ご来店(?:を)?お?待ち|入荷しました/i;
+
+/** True when a post is a shop advert / listing rather than a tournament result. */
+export function isShopAd(text: string): boolean {
+  return SHOP_AD.test(text) && !RESULT_SIGNAL.test(text);
+}
+
 /** The poster's own deck: what follows a 使用 / 사용 marker, up to the line end. */
 function ownDeckSegment(text: string): string | null {
   const m = text.match(/(?:使用構築|使用リスト|使用デッキ|使用タイトル|使用|사용덱|사용\s*덱|사용)\s*[:：]?\s*([^\n]{0,40})/);
@@ -52,6 +70,9 @@ export function classifyDecks(
   // before the gate existed and any whose game only shows in the fetched text.
   // Hold rather than publish: invisible, and recoverable if ever misjudged.
   if (gameFromText(text) !== 'WS') return hold(mediaIndexes);
+
+  // A shop advert (sales / restock / buylist / open) is not a deck result.
+  if (isShopAd(text)) return hold(mediaIndexes);
 
   // A match video is two decks in one post — never auto-place it.
   if (MATCH_VIDEO.test(text)) return hold(mediaIndexes);

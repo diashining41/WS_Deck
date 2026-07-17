@@ -13,13 +13,16 @@
  * A whole-post text gate would delete ~72 such WS decks. So we reject only when
  * it CANNOT be a mislabelled WS deck:
  *
- *   1. game === 'LLOCG' — gameFromText already required an OCG name AND the
- *      absence of any base-WS marker, so a combined post never reaches here.
+ *   1. game === 'OTHER' — gameFromText already required an other-TCG name AND
+ *      the absence of any base-WS signal, so a combined post never reaches here.
  *   2. the deck sits on a non-WS title (title.game != 'WS') — a WS deck's work
  *      resolves to a WS title, so a deck on a Rosé title is a Rosé deck.
  *
  * A Rosé/Blau *mention* on a deck that maps to a WS title is deliberately LEFT
  * ALONE — that is the combined-post case, and the WS deck is the real one.
+ *
+ * It also sweeps shop-advert posts (isShopAd): a WS-marked sales / restock /
+ * buylist listing carrying a 작품 but no tournament result (labelled PROMO).
  *
  * Rejected (not deleted): status='rejected' hides it from the site but keeps the
  * row for audit and reversal. Then titles.deck_count is recomputed.
@@ -30,6 +33,7 @@ import { eq, inArray, sql } from 'drizzle-orm';
 
 import { closeDb, db, rows } from '@/db';
 import { decks, posts, titles } from '@/db/schema';
+import { isShopAd } from '@/lib/classify';
 import { gameFromText } from '@/lib/game';
 
 const COMMIT = process.argv.includes('--commit');
@@ -67,8 +71,8 @@ const reject: Row[] = [];
 const protect: Row[] = []; // non-WS text BUT maps to a WS title → combined post, real WS deck
 
 for (const d of all) {
-  const game = gameFromText(d.rawText ?? '');
-  if (game === 'WS') continue;
+  const text = d.rawText ?? '';
+  const game = gameFromText(text);
   const r: Row = {
     deckId: d.deckId,
     game,
@@ -78,10 +82,19 @@ for (const d of all) {
     status: d.status,
     source: d.source,
     url: d.url,
-    text: (d.rawText ?? '').replace(/\s+/g, ' ').trim().slice(0, 150),
+    text: text.replace(/\s+/g, ' ').trim().slice(0, 150),
   };
-  const safe = game === 'LLOCG' || d.titleGame !== 'WS';
-  (safe ? reject : protect).push(r);
+  if (game !== 'WS') {
+    // 'OTHER' already required an other-game name AND no base-WS signal, so it
+    // cannot be a mislabelled WS deck. Rosé/Blau on a WS title is the combined-
+    // post case (the real deck is WS) → protect; on a non-WS title → reject.
+    const safe = game === 'OTHER' || d.titleGame !== 'WS';
+    (safe ? reject : protect).push(r);
+  } else if (isShopAd(text)) {
+    // WS-marked, but a shop advert / sales listing — not a tournament result.
+    r.game = 'PROMO';
+    reject.push(r);
+  }
 }
 
 const rejByGame: Record<string, number> = {};

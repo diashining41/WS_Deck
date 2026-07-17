@@ -1,14 +1,24 @@
 /**
- * Keeping the two spin-offs out.
+ * Keeping non-Weiß-Schwarz card games out.
  *
- * Weiß Schwarz Rosé and Blau are separate games with separate card pools; this
- * site is base WS only. Two independent gates, because either one alone leaks:
+ * This site is base WS only. Several other games leak in because they SHARE the
+ * anime IP a WS post would name, so their tournament tweets look placeable onto
+ * our title pages:
  *
- *   - **By title code.** Every Rosé work carries an OS## code. Measured against
- *     the imported data this agrees with the post text 31/31 in both directions,
- *     so for any work already in the master, the code alone decides it.
- *   - **By post text.** A brand-new Rosé work won't be in the master yet, so the
- *     text gate catches it at ingest before it can create a bogus title.
+ *   - **Rosé / Blau** — WS's own adult / alt spin-offs (separate card pools).
+ *   - **Other Bushiroad & rival TCGs** — hololive OFFICIAL CARD GAME (ホロカ),
+ *     Love Live! OFFICIAL CARD GAME (ラブカ), Union Arena, Godzilla Card Game
+ *     (ゴジカ), One Piece / Pokémon / Digimon / Gundam / 五等分の花嫁 card games,
+ *     Yu-Gi-Oh, MTG, Duel Masters. Each shows up wearing an IP we carry
+ *     (hololive, チェンソーマン, マクロス, シンデレラガールズ …).
+ *
+ * Two gates, because either alone leaks:
+ *   - **By title code.** Every Rosé work carries an OS## code (decides Rosé).
+ *   - **By post text.** The game's OWN name is the tell — a WS post never uses
+ *     "ホロカ"/"ラブカ"/"ユニオンアリーナ" for itself. The trap: a WS player drops
+ *     "ホロカしか勝たん" in a comment on a genuine ヴァイス post, so a bare name
+ *     match alone deletes real WS decks. Hence: an other-game name AND the
+ *     absence of any base-WS signal (keyword OR a WS deck-list fingerprint).
  */
 
 /** Rosé works are exactly the OS## codes — Navel, AQUAPLUS, Alice Soft, … */
@@ -17,40 +27,42 @@ export function isRoseCode(code: string): boolean {
 }
 
 /**
- * `ブラウ` is a substring of `ブラウンダスト` (Brown Dust), which is a perfectly
- * ordinary Neo-Standard title with 37 decks in the archive. A naive /ブラウ/
- * match flags 12 of them as Blau and would delete them. The negative lookahead
- * is the entire point of this regex — do not "simplify" it.
+ * `ブラウ` is a substring of `ブラウンダスト` (Brown Dust), a perfectly ordinary
+ * Neo-Standard title. The negative lookahead is the entire point — do not
+ * "simplify" it. Same trap on Rosé: ロゼッタ is a Granblue character.
  */
 const BLAU_TEXT = /ヴァイスシュヴァルツ\s*ブラウ|WSブラウ|ブラウ(?!ン)|블라우|\bBlau\b/i;
-/** Same trap on the other side: ロゼッタ is a Granblue character, not the game. */
 const ROSE_TEXT = /ヴァイスシュヴァルツ\s*ロゼ|WSロゼ|ロゼ(?!ッタ)|로제|\bWSR\b/i;
 
 /**
- * Love Live! Official Card Game (ラブライブ！オフィシャルカードゲーム, "ラブカ") is a
- * SEPARATE Bushiroad TCG — not a WS spin-off. It shares the Love Live IP, so its
- * tournament posts name works we genuinely carry in WS (μ's, Aqours, 蓮ノ空, …)
- * and would otherwise be auto-placed onto those title pages. Eight had already
- * landed on the 러브라이브본가 page this way — μ's OCG shop wins masquerading as WS.
- *
- * The tell is the game's own name: オフィシャルカードゲーム / ラブカ / ラブライブカードゲーム,
- * which a WS post never uses for itself. The trap is that a WS player sometimes
- * drops "ラブカ" in a *comment* ("ラブカ楽しいです") on a genuine ヴァイス post, so a
- * bare ラブカ match alone would wrongly delete real WS decks. Hence: an OCG name
- * AND the absence of any base-WS marker. Checked after ROSE/BLAU, whose posts
- * carry シュヴァルツ (a WS marker) yet must not be read as base WS.
+ * Every other TCG by its OWN distinctive game-name. Union of hololive OCG,
+ * Love Live OCG, Godzilla CG, Union Arena, One Piece / Pokémon / Digimon /
+ * Gundam / 五等分の花嫁 CG, Shadowverse EVOLVE, Yu-Gi-Oh, MTG, Duel Masters.
+ * Only decides "not WS" together with the WS-absence guard below.
  */
-const LLOCG_TEXT =
-  /ラブライブ[！!]?\s*(?:シリーズ)?\s*(?:の)?オフィシャルカードゲーム|ラブライブ\s*カードゲーム|ラブカ|러브라이브\s*(?:시리즈)?\s*(?:오피셜|공식)?\s*카드\s*게임|러브카/i;
-/** Any marker that pins a post to base Weiss Schwarz — its presence overrides the OCG guess. */
-const WS_TEXT = /ヴァイス|ワイス|シュヴァルツ|바이스|와이스|\bWS\b|ws\dtcg|wei[sß]/i;
+const OTHER_TCG =
+  /ホロカ|ホロライブ\s*(?:オフィシャル)?\s*カードゲーム|ホロライブOCG|hololive\s*OFFICIAL\s*CARD\s*GAME|홀로라이브\s*(?:오피셜|공식)?\s*카드\s*?게임|홀로카|ラブライブ[！!]?\s*(?:シリーズ)?\s*(?:の)?オフィシャルカードゲーム|ラブライブ\s*カードゲーム|ラブカ|ラブライブTCG|러브라이브\s*(?:시리즈)?\s*(?:오피셜|공식)?\s*카드\s*?게임|러브카|러브라이브\s*TCG|ゴジラカードゲーム|ゴジラカード|ゴジカ|고질라\s*카드\s*게임|ユニオンアリーナ|ユニアリ\b|UNION\s*ARENA|유니온\s*아레나|ワンピースカードゲーム|ONE\s*PIECE\s*CARD\s*GAME|원피스\s*카드\s*게임|ポケモンカードゲーム|ポケカ\b|포켓몬\s*카드\s*게임|デジモンカードゲーム|디지몬\s*카드\s*게임|ガンダムカードゲーム|ガンダムカード|건담\s*카드\s*게임|シャドウバース\s*エボルヴ|Shadowverse\s*EVOLVE|遊戯王|유희왕|マジック：?ザ・?ギャザリング|Magic.{0,2}the\s*Gathering|\bMTG\b|デュエルマスターズ|デュエマ|듀얼마스터즈|듀엘마스터즈|五等分の花嫁カードゲーム/i;
 
-export type Game = 'WS' | 'ROSE' | 'BLAU' | 'LLOCG';
+/** Keyword markers that pin a post to base Weiß Schwarz. */
+const WS_KEYWORD =
+  /ヴァイス|ワイス|シュヴァルツ|シュバルツ|バイス|바이스|와이스|\bWSB?\b|ws\dtcg|wei[sß]|ヴァイシュ|ﾜｲｽ|WGP|ネオスタン|네오스탠|바이스슈발츠/i;
+/**
+ * WS deck-list fingerprint: climax counts (8門 / 8電源 / 6宝2門 / 扉) that no
+ * other TCG on the OTHER_TCG list notates. Two or more ⇒ this is a WS decklist
+ * even with no keyword marker (WGP-style team reports often omit "ヴァイス").
+ */
+const WS_DECKLIST = /\d\s*(?:門|扉|電源|宝|チョイス|フォーカス|ゲート|魂)/g;
+
+function isWs(text: string): boolean {
+  return WS_KEYWORD.test(text) || (text.match(WS_DECKLIST)?.length ?? 0) >= 2;
+}
+
+export type Game = 'WS' | 'ROSE' | 'BLAU' | 'OTHER';
 
 /** What game is this post about, judged from its text alone. */
 export function gameFromText(text: string): Game {
   if (ROSE_TEXT.test(text)) return 'ROSE';
   if (BLAU_TEXT.test(text)) return 'BLAU';
-  if (LLOCG_TEXT.test(text) && !WS_TEXT.test(text)) return 'LLOCG';
+  if (OTHER_TCG.test(text) && !isWs(text)) return 'OTHER';
   return 'WS';
 }
