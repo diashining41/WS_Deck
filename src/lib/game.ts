@@ -37,11 +37,17 @@ const ROSE_TEXT = /ヴァイスシュヴァルツ\s*ロゼ|WSロゼ|ロゼ(?!ッ
 /**
  * Every other TCG by its OWN distinctive game-name. Union of hololive OCG,
  * Love Live OCG, Godzilla CG, Union Arena, One Piece / Pokémon / Digimon /
- * Gundam / 五等分の花嫁 CG, Shadowverse EVOLVE, Yu-Gi-Oh, MTG, Duel Masters.
- * Only decides "not WS" together with the WS-absence guard below.
+ * Gundam / 五等分の花嫁 CG, Disney Lorcana, Cardfight!! Vanguard, Battle Spirits,
+ * WIXOSS, Z/X, Reバース, Build Divide, Shadowverse EVOLVE, Yu-Gi-Oh, MTG,
+ * Duel Masters. Only decides "not WS" together with the WS-absence guard below.
+ *
+ * Note the works that ALSO have a real WS set (hololive, ゴジラ, 五等分の花嫁,
+ * ディズニー): match only the other game's own name (…カードゲーム / ロルカナ /
+ * ミラーウォリアーズ is WS so NOT here), never the bare IP, so genuine WS decks
+ * for those works stay.
  */
 const OTHER_TCG =
-  /ホロカ|ホロライブ\s*(?:オフィシャル)?\s*カードゲーム|ホロライブOCG|hololive\s*OFFICIAL\s*CARD\s*GAME|홀로라이브\s*(?:오피셜|공식)?\s*카드\s*?게임|홀로카|ラブライブ[！!]?\s*(?:シリーズ)?\s*(?:の)?オフィシャルカードゲーム|ラブライブ\s*カードゲーム|ラブカ|ラブライブTCG|러브라이브\s*(?:시리즈)?\s*(?:오피셜|공식)?\s*카드\s*?게임|러브카|러브라이브\s*TCG|ゴジラカードゲーム|ゴジラカード|ゴジカ|고질라\s*카드\s*게임|ユニオンアリーナ|ユニアリ\b|UNION\s*ARENA|유니온\s*아레나|ワンピースカードゲーム|ONE\s*PIECE\s*CARD\s*GAME|원피스\s*카드\s*게임|ポケモンカードゲーム|ポケカ\b|포켓몬\s*카드\s*게임|デジモンカードゲーム|디지몬\s*카드\s*게임|ガンダムカードゲーム|ガンダムカード|건담\s*카드\s*게임|シャドウバース\s*エボルヴ|Shadowverse\s*EVOLVE|遊戯王|유희왕|マジック：?ザ・?ギャザリング|Magic.{0,2}the\s*Gathering|\bMTG\b|デュエルマスターズ|デュエマ|듀얼마스터즈|듀엘마스터즈|五等分の花嫁カードゲーム/i;
+  /ホロカ|ホロライブ\s*(?:オフィシャル)?\s*カードゲーム|ホロライブOCG|hololive\s*OFFICIAL\s*CARD\s*GAME|홀로라이브\s*(?:오피셜|공식)?\s*카드\s*?게임|홀로카|ラブライブ[！!]?\s*(?:シリーズ)?\s*(?:の)?オフィシャルカードゲーム|ラブライブ\s*カードゲーム|ラブカ|ラブライブTCG|러브라이브\s*(?:시리즈)?\s*(?:오피셜|공식)?\s*카드\s*?게임|러브카|러브라이브\s*TCG|ゴジラカードゲーム|ゴジラカード|ゴジカ|고질라\s*카드\s*게임|ユニオンアリーナ|ユニアリ\b|UNION\s*ARENA|유니온\s*아레나|ワンピースカードゲーム|ONE\s*PIECE\s*CARD\s*GAME|원피스\s*카드\s*게임|ポケモンカードゲーム|ポケカ\b|포켓몬\s*카드\s*게임|デジモンカードゲーム|디지몬\s*카드\s*게임|ガンダムカードゲーム|ガンダムカード|건담\s*카드\s*게임|五等分の花嫁\s*カードゲーム|5等分の花嫁\s*カードゲーム|五等分\s*カードゲーム|五等分TCG|ごとカド|(?:오|5)등분의?\s*신부\s*카드\s*게임|ロルカナ|Lorcana|로카나|ヴァンガード|カードファイト!?!?\s*ヴァンガード|카드파이트|뱅가드|バトルスピリッツ|バトスピ|배틀\s*스피리츠|ウィクロス|WIXOSS|위크로스|ゼクス|Z\/X|Reバース|리버스\s*포\s*유|ビルディバイド|ビルダイ|빌디바이드|シャドウバース\s*エボルヴ|Shadowverse\s*EVOLVE|遊戯王|유희왕|マジック：?ザ・?ギャザリング|Magic.{0,2}the\s*Gathering|\bMTG\b|デュエルマスターズ|デュエマ|듀얼마스터즈|듀엘마스터즈/i;
 
 /** Keyword markers that pin a post to base Weiß Schwarz. */
 const WS_KEYWORD =
