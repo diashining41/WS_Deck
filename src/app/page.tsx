@@ -1,6 +1,7 @@
 import { allTitles, stats as getStats } from '@/lib/static-data';
 
 import { SeasonHome } from './season-home';
+import { ViewTabs } from './view-tabs';
 
 // Reads the committed snapshot, so this prerenders to a static page at build.
 export default function HomePage() {
@@ -9,6 +10,8 @@ export default function HomePage() {
 
   return (
     <div>
+      <ViewTabs active="titles" />
+
       <div className="mb-6">
         <h1 className="text-2xl font-bold">타이틀별 대회 덱 레시피</h1>
         <p className="mt-2 text-sm text-[var(--muted)]">
