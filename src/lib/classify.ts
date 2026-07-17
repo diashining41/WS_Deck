@@ -49,6 +49,24 @@ export function isShopAd(text: string): boolean {
   return SHOP_AD.test(text) && !RESULT_SIGNAL.test(text);
 }
 
+/**
+ * This site collects 입상덱 — decks that PLACED in a tournament. A creator's
+ * deck-showcase or "I built this for fun" video ("かべウチ #92", "組んでみました",
+ * "ぜひ試してみて", a YouTube link) carries a WS 작품 and a deck photo, so it
+ * auto-publishes — but it never placed anywhere. Tell: a showcase/video marker
+ * with NO tournament context at all. A genuine placing post that also links a
+ * video keeps a 優勝/入賞/位/大会 marker, so it passes.
+ */
+const TOURNEY_CONTEXT =
+  /優勝|準優勝|入賞|ベスト\d|トップ\d|Top\s*\d|\d\s*位|\d+\s*등|上位|全勝|大会|公認|ショップ(?:大会|バトル|ファイト)|\bCS\b|杯|カップ|トナメ|トーナメント|予選|本戦|決勝|準決|戦績|使用|使\/|レシピ|優勝者|入賞者|우승|입상|Locals|Regional|WGP|Champion|Swiss|Round\s*\d|\bR\d\b|対戦|\d\s*[-‐]\s*\d|勝ち|敗/i;
+const SHOWCASE =
+  /かべウチ|デッキ紹介|紹介動画|組んでみ|作ってみ|回してみ|やってみ|試してみ|一人回し|ソロ回し|解説動画|ゆっくり|youtu\.?be|youtube|生放送|【[^】]{0,20}#\d{1,4}】|やりたいだけ|チャンネル登録|概要欄/i;
+
+/** True when a post is a deck-showcase / video, not a tournament placement. */
+export function isShowcase(text: string): boolean {
+  return SHOWCASE.test(text) && !TOURNEY_CONTEXT.test(text);
+}
+
 /** The poster's own deck: what follows a 使用 / 사용 marker, up to the line end. */
 function ownDeckSegment(text: string): string | null {
   const m = text.match(/(?:使用構築|使用リスト|使用デッキ|使用タイトル|使用|사용덱|사용\s*덱|사용)\s*[:：]?\s*([^\n]{0,40})/);
@@ -73,6 +91,9 @@ export function classifyDecks(
 
   // A shop advert (sales / restock / buylist / open) is not a deck result.
   if (isShopAd(text)) return hold(mediaIndexes);
+
+  // A deck-showcase / video ("組んでみた", "かべウチ #92") never placed anywhere.
+  if (isShowcase(text)) return hold(mediaIndexes);
 
   // A match video is two decks in one post — never auto-place it.
   if (MATCH_VIDEO.test(text)) return hold(mediaIndexes);
