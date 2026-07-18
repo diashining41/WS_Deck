@@ -254,8 +254,13 @@ for (const post of pending.slice(0, LIMIT)) {
         mediaUrls.map((_, i) => i),
         titleMatcher,
       );
-      const toPublish = classified.filter((c) => c.status === 'published');
-      if (toPublish.length === 0) {
+      // Store every deck we could resolve a title for — auto-published ones AND
+      // held (needs_review) ones that lack a WS fingerprint. The held ones need
+      // their IMAGE downloaded so the periodic 판독 (review:vision) can judge
+      // whether it's a real WS 50-card recipe. Only a hold with NO title at all
+      // is truly unplaceable (would show nowhere) → keep the link, skip images.
+      const toStore = classified.filter((c) => c.titleId !== null);
+      if (toStore.length === 0) {
         await db
           .update(posts)
           .set({ rawText: text, authorHandle: author, fetchedAt: new Date() })
@@ -267,19 +272,19 @@ for (const post of pending.slice(0, LIMIT)) {
       const region = guessRegion(text);
       const scale = guessScale(text);
       const format = guessFormat(text);
-      for (const c of toPublish) {
+      for (const c of toStore) {
         const img = await storeOne(c.mediaIndex);
         await db.insert(decks).values({
           postId: post.id,
           mediaIndex: c.mediaIndex,
           imageId: img.id,
-          imageVerified: toPublish.length === 1,
+          imageVerified: toStore.length === 1,
           titleId: c.titleId,
           climaxes: c.climaxes,
           region,
           scale,
           format,
-          status: 'published',
+          status: c.status, // 'published' (WS fingerprint) or 'needs_review' (awaits 판독)
           provenance: 'ai',
           sortAt: post.postedAt ?? new Date(),
         });
@@ -288,7 +293,8 @@ for (const post of pending.slice(0, LIMIT)) {
         .update(posts)
         .set({ rawText: text, rawJson: raw as object, authorHandle: author, fetchedAt: new Date() })
         .where(eq(posts.id, post.id));
-      console.log(`${label} ✓ 자동게시 ${toPublish.length}개 (이미지 ${toPublish.length}장)`);
+      const pubN = toStore.filter((c) => c.status === 'published').length;
+      console.log(`${label} ✓ 게시 ${pubN} · 판독대기 ${toStore.length - pubN} (이미지 ${toStore.length}장)`);
       await sleep(PACING_MS);
       continue;
     }

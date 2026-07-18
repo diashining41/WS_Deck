@@ -1,15 +1,17 @@
 import type { Climax } from '@/db/schema';
-import { gameFromText } from '@/lib/game';
+import { gameFromText, hasWsFingerprint } from '@/lib/game';
 import { climaxesFromText } from '@/lib/heuristics';
 import type { TitleMatcher } from '@/lib/match';
 
 /**
  * Decide what a captured post becomes, WITHOUT reading its images.
  *
- * Auto-publish (no human review) can only place a deck if the 작품 is written in
- * the post text — the site is organised by title, so a title-less deck shows
- * nowhere anyway. So: text names the title ⇒ publish; it doesn't ⇒ hold as
- * needs_review (captured, invisible, recoverable later).
+ * Auto-publish (no human review) needs TWO things from the text: the 작품 (the
+ * site is organised by title, so a title-less deck shows nowhere) AND a positive
+ * WS fingerprint (hasWsFingerprint) — proof it's really Weiß Schwarz and not a
+ * look-alike game or a non-recipe photo the text can't distinguish. Missing
+ * either ⇒ hold as needs_review (captured, invisible) for image 판독, which then
+ * publishes the real WS 50-card recipes and rejects the rest.
  *
  * The trap is picking the WRONG title. A tournament post often names several
  * works — opponents, match-ups, a whole team. Two rules keep accuracy high:
@@ -128,6 +130,14 @@ export function classifyDecks(
   // A match video is two decks in one post — never auto-place it.
   if (MATCH_VIDEO.test(text)) return hold(mediaIndexes);
 
+  // AUTO-PUBLISH ONLY A CONFIRMED WS 50-CARD RECIPE. gameFromText only ruled out
+  // *named* other games; it can't see the image, and Reバース for you / Vanguard
+  // wear the same IPs (hololive, love live, マクロス) while naming no other game —
+  // so a "#ホロライブ 優勝 AZKi単" post defaults to WS yet may be Reバース, a lone
+  // card, a certificate, or a promo. Without a positive WS fingerprint in the
+  // text we cannot prove it, so hold for image 판독. We still resolve the title
+  // below and keep it on the held deck, so review only has to confirm the image.
+  const wsOk = hasWsFingerprint(text);
   const climaxes = climaxesFromText(text);
 
   if (mediaIndexes.length === 1) {
@@ -141,8 +151,10 @@ export function classifyDecks(
       if (all.length === 1) titleId = all[0]!.key;
     }
 
+    // Publish only with BOTH a resolved title AND a WS fingerprint; otherwise
+    // hold (title kept, so 판독 just flips it live).
     return [
-      { mediaIndex: mediaIndexes[0]!, titleId, climaxes, status: titleId ? 'published' : 'needs_review' },
+      { mediaIndex: mediaIndexes[0]!, titleId, climaxes, status: titleId && wsOk ? 'published' : 'needs_review' },
     ];
   }
 
@@ -158,7 +170,8 @@ export function classifyDecks(
       mediaIndex,
       titleId: ordered[i]!.titleId,
       climaxes: [],
-      status: 'published' as const,
+      // Same rule: a trio with no WS fingerprint is held (titles kept) for 판독.
+      status: wsOk ? 'published' : ('needs_review' as const),
     }));
   }
 

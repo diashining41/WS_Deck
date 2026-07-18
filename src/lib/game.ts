@@ -69,6 +69,22 @@ function isWs(text: string): boolean {
   return WS_KEYWORD.test(text) || (text.match(WS_DECKLIST)?.length ?? 0) >= 2;
 }
 
+/**
+ * A POSITIVE base-WS signal in the post text — a WS keyword, or one piece of WS
+ * climax notation (8門 / 6宝2門 / 8電源 …) that no other TCG uses.
+ *
+ * The gate for AUTO-PUBLISH. gameFromText only tells us it's NOT an *other* game
+ * by name; that isn't enough, because Reバース for you and Vanguard share the
+ * very IPs WS carries (hololive, love live, マクロス) and name no other game, so
+ * a "#ホロライブ 優勝 AZKi単" post looks WS by default yet may be Reバース. Only
+ * a real WS fingerprint confirms it. No fingerprint ⇒ the text cannot prove this
+ * is a WS 50-card recipe, so hold it for image 판독 rather than auto-publishing.
+ * (Looser than isWs's ≥2 — one climax token is a confident WS tell on its own.)
+ */
+export function hasWsFingerprint(text: string): boolean {
+  return WS_KEYWORD.test(text) || (text.match(WS_DECKLIST)?.length ?? 0) >= 1;
+}
+
 export type Game = 'WS' | 'ROSE' | 'BLAU' | 'OTHER';
 
 /** What game is this post about, judged from its text alone. */
