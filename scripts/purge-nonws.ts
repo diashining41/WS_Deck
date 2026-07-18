@@ -33,7 +33,7 @@ import { eq, inArray, sql } from 'drizzle-orm';
 
 import { closeDb, db, rows } from '@/db';
 import { decks, posts, titles } from '@/db/schema';
-import { isShopAd, isShowcase } from '@/lib/classify';
+import { isEventPromo, isShopAd, isShowcase } from '@/lib/classify';
 import { gameFromText } from '@/lib/game';
 
 const COMMIT = process.argv.includes('--commit');
@@ -97,6 +97,10 @@ for (const d of all) {
   } else if (isShowcase(text)) {
     // WS-marked, but a deck-showcase / video — never placed in a tournament.
     r.game = 'SHOWCASE';
+    reject.push(r);
+  } else if (isEventPromo(text)) {
+    // WS-marked, but an upcoming-event announcement — no one has placed yet.
+    r.game = 'EVENT';
     reject.push(r);
   }
 }

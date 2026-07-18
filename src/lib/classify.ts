@@ -67,6 +67,33 @@ export function isShowcase(text: string): boolean {
   return SHOWCASE.test(text) && !TOURNEY_CONTEXT.test(text);
 }
 
+/**
+ * An announcement for an UPCOMING event, not a placing result. Shops post these
+ * with a 작품 named only in the prize ("全勝賞：シンデレラガールズ 1BOX") and a
+ * flyer image, so they auto-publish as a deck though no one has placed yet.
+ *
+ * This gate is deliberately hard to trip, because the failure mode is DELETING
+ * REAL RESULTS. Two rules learned the hard way:
+ *
+ *   - PROMO_SIGNAL is registration-only vocabulary (will-be-held / entry / sign-
+ *     up / pre-order / all-win-PRIZE). It must NOT include 参加費 or 参加お待ち:
+ *     "またのご参加お待ちしております" and "参加費奢ってくれた" are boilerplate in
+ *     the FOOTER of ordinary result tweets, so those would nuke real placements.
+ *   - PROMO_RESULT (this-is-a-result, so pass) is broad: おめでとう / 🥇 / 選手 /
+ *     デッキ名 / 制した / 使用 / a match score — the things a report has and an
+ *     announcement doesn't. 全勝賞・優勝賞 are PRIZES (negative lookahead on 賞),
+ *     not results, so a pure "全勝賞：BOX" flyer is not rescued by them.
+ */
+const PROMO_SIGNAL =
+  /開催\s*(?:予定|決定)|開催っ|エントリー\s*(?:受付|開始|はこちら|する)|参加者?\s*募集|参加\s*受付|事前\s*(?:予約|登録)|(?:予約|申[しこ]込)\s*(?:受付|開始|はこちら|方法)|トナメル|締[めき]切|全勝賞|参加賞|要\s*事前|개최\s*(?:예정|확정)|참가자?\s*모집|사전\s*(?:예약|등록)|참가\s*신청/i;
+const PROMO_RESULT =
+  /おめでとう|🥇|🥈|🥉|優勝(?!賞)|準優勝|入賞(?!賞)|全勝(?!賞)|ベスト\d|トップ\d|Top\s*\d|\d\s*位|\d+\s*등|上位|制した|選手|さんです|さん\s*です|デッキ\s*[名:：]|使用|使っ|レシピ|戦績|構築|開催\s*(?:され|となり|しま)|でした|\d\s*[-‐]\s*\d|우승|입상/i;
+
+/** True when a post announces a future event (sign-up / entry / prize), not a result. */
+export function isEventPromo(text: string): boolean {
+  return PROMO_SIGNAL.test(text) && !PROMO_RESULT.test(text);
+}
+
 /** The poster's own deck: what follows a 使用 / 사용 marker, up to the line end. */
 function ownDeckSegment(text: string): string | null {
   const m = text.match(/(?:使用構築|使用リスト|使用デッキ|使用タイトル|使用|사용덱|사용\s*덱|사용)\s*[:：]?\s*([^\n]{0,40})/);
@@ -94,6 +121,9 @@ export function classifyDecks(
 
   // A deck-showcase / video ("組んでみた", "かべウチ #92") never placed anywhere.
   if (isShowcase(text)) return hold(mediaIndexes);
+
+  // An upcoming-event announcement ("BOX争奪戦 開催！参加費500円") is not a result.
+  if (isEventPromo(text)) return hold(mediaIndexes);
 
   // A match video is two decks in one post — never auto-place it.
   if (MATCH_VIDEO.test(text)) return hold(mediaIndexes);
