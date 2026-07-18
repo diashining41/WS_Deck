@@ -32,6 +32,7 @@ const rows = await db
     url: posts.urlOriginal,
     imgId: images.id,
     originUrl: images.originUrl,
+    mediumKey: images.mediumKey,
     code: titles.code,
     nameKo: titles.nameKo,
   })
@@ -54,8 +55,8 @@ if (MODE === 'buckets') {
 }
 
 const bucket = BUCKET === 'photo' ? photo : decklog;
-const batch = bucket.slice(OFFSET, OFFSET + LIMIT);
-console.log(`[${BUCKET}] 총 ${bucket.length} · 배치 [${OFFSET}, ${OFFSET + LIMIT})`);
+const ALL = process.env.ALL === '1';
+console.log(`[${BUCKET}] 총 ${bucket.length}`);
 
 const OUT = resolve('.data/review');
 const CACHE = join(OUT, 'orig');
@@ -77,35 +78,48 @@ async function fetchOrig(url: string): Promise<Buffer | null> {
 
 const CELL_W = 760;
 const CELL_H = 500;
-const cells: sharp.OverlayOptions[] = [];
-const table: string[] = [];
 
-for (let i = 0; i < batch.length; i++) {
-  const r = batch[i]!;
-  const cellNo = OFFSET + i;
-  table.push(`  #${String(cellNo).padStart(3)}  ${(r.code ?? '-').padEnd(5)} ${(r.nameKo ?? '').slice(0, 14).padEnd(16)} ${r.url}   [${r.deckId}]`);
-  const raw = r.originUrl ? await fetchOrig(r.originUrl) : null;
-  const banner = Buffer.from(
-    `<svg width="${CELL_W}" height="42"><rect width="100%" height="100%" fill="#111"/><text x="10" y="30" font-size="26" fill="#0f0" font-family="monospace">#${cellNo}  ${r.code}</text></svg>`,
-  );
-  const body = raw
-    ? await sharp(raw).resize({ width: CELL_W, height: CELL_H - 42, fit: 'contain', background: '#222' }).png().toBuffer()
-    : await sharp({ create: { width: CELL_W, height: CELL_H - 42, channels: 3, background: '#400' } }).png().toBuffer();
-  const cell = await sharp({ create: { width: CELL_W, height: CELL_H, channels: 3, background: '#000' } })
-    .composite([{ input: banner, top: 0, left: 0 }, { input: body, top: 42, left: 0 }])
+async function buildMontage(offset: number): Promise<void> {
+  const batch = bucket.slice(offset, offset + LIMIT);
+  if (!batch.length) return;
+  const cells: sharp.OverlayOptions[] = [];
+  const table: string[] = [];
+  for (let i = 0; i < batch.length; i++) {
+    const r = batch[i]!;
+    const cellNo = offset + i;
+    table.push(`  #${String(cellNo).padStart(4)}  ${(r.code ?? '-').padEnd(5)} ${(r.nameKo ?? '').slice(0, 12).padEnd(14)} ${r.url}   [${r.deckId}]`);
+    const local = r.mediumKey ? join('public', r.mediumKey.replace(/^\//, '')) : null;
+    const raw = local && existsSync(local) ? readFileSync(local) : r.originUrl ? await fetchOrig(r.originUrl) : null;
+    const banner = Buffer.from(
+      `<svg width="${CELL_W}" height="42"><rect width="100%" height="100%" fill="#111"/><text x="10" y="30" font-size="26" fill="#0f0" font-family="monospace">#${cellNo}  ${r.code}</text></svg>`,
+    );
+    const body = raw
+      ? await sharp(raw).resize({ width: CELL_W, height: CELL_H - 42, fit: 'contain', background: '#222' }).png().toBuffer()
+      : await sharp({ create: { width: CELL_W, height: CELL_H - 42, channels: 3, background: '#400' } }).png().toBuffer();
+    const cell = await sharp({ create: { width: CELL_W, height: CELL_H, channels: 3, background: '#000' } })
+      .composite([{ input: banner, top: 0, left: 0 }, { input: body, top: 42, left: 0 }])
+      .png()
+      .toBuffer();
+    cells.push({ input: cell, top: Math.floor(i / COLS) * CELL_H, left: (i % COLS) * CELL_W });
+  }
+  const montage = await sharp({
+    create: { width: COLS * CELL_W, height: Math.ceil(batch.length / COLS) * CELL_H, channels: 3, background: '#000' },
+  })
+    .composite(cells)
     .png()
     .toBuffer();
-  cells.push({ input: cell, top: Math.floor(i / COLS) * CELL_H, left: (i % COLS) * CELL_W });
+  writeFileSync(join(OUT, `audit_${BUCKET}_${offset}.png`), montage);
+  if (!ALL) console.log('\n' + table.join('\n'));
 }
 
-const montage = await sharp({
-  create: { width: COLS * CELL_W, height: Math.ceil(batch.length / COLS) * CELL_H, channels: 3, background: '#000' },
-})
-  .composite(cells)
-  .png()
-  .toBuffer();
-const mpath = join(OUT, `audit_${BUCKET}_${OFFSET}.png`);
-writeFileSync(mpath, montage);
-console.log('\n' + table.join('\n'));
-console.log(`\n몽타주: ${mpath}`);
+if (ALL) {
+  for (let off = 0; off < bucket.length; off += LIMIT) {
+    await buildMontage(off);
+    if (off % 120 === 0) console.log(`  … ${off}/${bucket.length}`);
+  }
+  console.log(`\n전체 몽타주 ${Math.ceil(bucket.length / LIMIT)}개 생성: ${OUT}/audit_${BUCKET}_<offset>.png`);
+} else {
+  await buildMontage(OFFSET);
+  console.log(`\n몽타주: ${OUT}/audit_${BUCKET}_${OFFSET}.png`);
+}
 await closeDb();
