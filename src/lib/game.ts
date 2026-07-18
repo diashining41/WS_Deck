@@ -65,6 +65,16 @@ const WS_KEYWORD =
  */
 const WS_DECKLIST = /\d\s*(?:門|扉|電源|宝|チョイス|フォーカス|ゲート|魂)/g;
 
+/**
+ * A WS-community trio-tournament report: two or more of the three team positions
+ * (先鋒/中堅/大将, sometimes 副将). A trio result lists decks per position with no
+ * climax count and often no "ヴァイス" keyword, so it has no other fingerprint and
+ * would be wrongly held. Requiring ≥2 positions keeps a stray 大将 in prose from
+ * tripping it. (Other games' trio reports name their own game ⇒ OTHER_TCG gate;
+ * the residual look-alike is left to the image 판독, per the recall/vision trade.)
+ */
+const WS_TEAM_POS = /先鋒|中堅|大将|副将/g;
+
 function isWs(text: string): boolean {
   return WS_KEYWORD.test(text) || (text.match(WS_DECKLIST)?.length ?? 0) >= 2;
 }
@@ -82,7 +92,11 @@ function isWs(text: string): boolean {
  * (Looser than isWs's ≥2 — one climax token is a confident WS tell on its own.)
  */
 export function hasWsFingerprint(text: string): boolean {
-  return WS_KEYWORD.test(text) || (text.match(WS_DECKLIST)?.length ?? 0) >= 1;
+  return (
+    WS_KEYWORD.test(text) ||
+    (text.match(WS_DECKLIST)?.length ?? 0) >= 1 ||
+    (text.match(WS_TEAM_POS)?.length ?? 0) >= 2
+  );
 }
 
 export type Game = 'WS' | 'ROSE' | 'BLAU' | 'OTHER';

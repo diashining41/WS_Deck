@@ -85,14 +85,40 @@ export function isShowcase(text: string): boolean {
  *     デッキ名 / 制した / 使用 / a match score — the things a report has and an
  *     announcement doesn't. 全勝賞・優勝賞 are PRIZES (negative lookahead on 賞),
  *     not results, so a pure "全勝賞：BOX" flyer is not rescued by them.
+ *
+ * The soft balance above has one blind spot: a flyer that lists its PRIZES under
+ * "■優勝者 …（PR+）" trips PROMO_RESULT via 優勝(?!賞) — 優勝者 is the prize label,
+ * not a result — so the whole announcement leaks in as a deck. To close it,
+ * PROMO_HARD is a set of labeled pre-event fields a result tweet does NOT carry
+ * (開催日時 / 定員16名 / エントリー受付 / 事前予約). When one is present the post is
+ * an announcement regardless of prize wording, UNLESS RESULT_HARD proves it
+ * already happened (優勝しました / 使用デッキ / おめでとう / 選手 / a match score) —
+ * that rescues the rare shop recap that reprints the schedule next to real results.
  */
 const PROMO_SIGNAL =
   /開催\s*(?:予定|決定)|開催っ|エントリー\s*(?:受付|開始|はこちら|する)|参加者?\s*募集|参加\s*受付|事前\s*(?:予約|登録)|(?:予約|申[しこ]込)\s*(?:受付|開始|はこちら|方法)|トナメル|締[めき]切|全勝賞|参加賞|要\s*事前|개최\s*(?:예정|확정)|참가자?\s*모집|사전\s*(?:예약|등록)|참가\s*신청/i;
 const PROMO_RESULT =
   /おめでとう|🥇|🥈|🥉|優勝(?!賞)|準優勝|入賞(?!賞)|全勝(?!賞)|ベスト\d|トップ\d|Top\s*\d|\d\s*位|\d+\s*등|上位|制した|選手|さんです|さん\s*です|デッキ\s*[名:：]|使用|使っ|レシピ|戦績|構築|開催\s*(?:され|となり|しま)|でした|\d\s*[-‐]\s*\d|우승|입상/i;
 
+// Labeled pre-event structure a result tweet doesn't carry (schedule / capacity /
+// entry / pre-order). Its presence marks an announcement on its own.
+const PROMO_HARD =
+  /開催日時|開催\s*日\s*[:：]|開催\s*(?:予定|決定)|エントリー\s*(?:受付|開始|はこちら|締[めき]切)|事前\s*(?:予約|登録|エントリー)|定員\s*\d+\s*名|要\s*事前|参加\s*(?:受付|募集)|申[しこ]込\s*(?:受付|開始|方法|はこちら)/i;
+// Unambiguous proof the event already happened — rescues a flyer-shaped recap.
+// The decisive tell: a RESULT names PEOPLE and their decks — a handle (HN:), an
+// honorific-owner (〇〇さん/様/氏の「デッキ」), a trio position (先鋒/中堅/大将), a
+// deck name, a placing card (n枚目) — while the pure GBF-style flyer lists only
+// prize CARDS under 優勝者/BEST4賞 with no person. Deliberately NOT bare 優勝(?!賞):
+// that is the 優勝者 prize-label false hit. Honorifics must own a deck (様の「…」/
+// さんです) or follow a colon-name (優勝者：〇〇様) — bare 皆さん/参加者様 don't rescue.
+const RESULT_HARD =
+  /HN\s*[:：]|選手|先鋒|中堅|大将|副将|チーム名\s*[:：]|\d\s*枚目|デッキ名\s*[:：]|(?:さん|様|氏|くん|ちゃん)の\s*[「『【\[]|(?:さん|様|氏)で[すし]|[:：]\s*\S{1,12}(?:さん|様|氏)|使用\s*(?:デッキ|構築|リスト|タイトル)|デッキレシピ|レシピ\s*[:：]|優勝し[たま]|制した|おめでとう|🥇|🥈|🥉|ご参加\s*(?:あり|いただき)|\d\s*[-‐]\s*\d\b|우승자?는|입상/i;
+
 /** True when a post announces a future event (sign-up / entry / prize), not a result. */
 export function isEventPromo(text: string): boolean {
+  // Strong flyer structure wins unless there's hard proof it already happened.
+  if (PROMO_HARD.test(text) && !RESULT_HARD.test(text)) return true;
+  // Otherwise the softer balance: registration vocab minus result vocab.
   return PROMO_SIGNAL.test(text) && !PROMO_RESULT.test(text);
 }
 
