@@ -28,6 +28,11 @@ const OFFSET = Number(process.env.OFFSET ?? 0);
 const LIMIT = Number(process.env.LIMIT ?? 24);
 const COLS = Number(process.env.COLS ?? 4);
 const ALL = process.env.ALL === '1';
+// Scope to specific title codes (default: all shared-IP) — e.g. CODES=HOL,LHS for
+// a hi-res re-scan of the OCG-risk titles (hololive OCG / Love Live OCG share the
+// exact frame-invisible-to-text look). Cell size overridable for legible frames.
+const CODES = (process.env.CODES ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+const SCOPE = CODES.length ? CODES : SHARED_CODES;
 
 const raw = await db
   .select({
@@ -38,7 +43,7 @@ const raw = await db
   .innerJoin(posts, eq(posts.id, decks.postId))
   .innerJoin(titles, eq(titles.id, decks.titleId))
   .leftJoin(images, eq(images.id, decks.imageId))
-  .where(and(eq(decks.status, 'published'), inArray(titles.code, SHARED_CODES)))
+  .where(and(eq(decks.status, 'published'), inArray(titles.code, SCOPE)))
   .orderBy(asc(titles.code), asc(decks.id));
 
 // text-unverifiable = the sweep queue
@@ -62,7 +67,7 @@ if (MODE === 'count') {
 const OUT = resolve('.data/review');
 const CACHE = join(OUT, 'orig');
 mkdirSync(CACHE, { recursive: true });
-const CW = 520, CH = 400;
+const CW = Number(process.env.CW ?? 520), CH = Number(process.env.CH ?? 400);
 
 async function grab(r: (typeof queue)[number]): Promise<Buffer | null> {
   const local = r.mediumKey ? join('public', r.mediumKey.replace(/^\//, '')) : null;
@@ -100,7 +105,8 @@ async function sheet(offset: number): Promise<void> {
   const montage = await sharp({
     create: { width: COLS * CW, height: Math.ceil(batch.length / COLS) * CH, channels: 3, background: '#000' },
   }).composite(cells).png().toBuffer();
-  writeFileSync(join(OUT, `shared_${String(offset).padStart(4, '0')}.png`), montage);
+  const tag = CODES.length ? CODES.join('-').toLowerCase() : 'shared';
+  writeFileSync(join(OUT, `${tag}_${String(offset).padStart(4, '0')}.png`), montage);
 }
 
 if (ALL) {

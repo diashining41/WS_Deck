@@ -28,6 +28,13 @@ const TARGETS: { id: string; why: string }[] = [
   { id: '1c474ea8-b072-43c7-9275-af932aa3e02f', why: 'HOL #70 — Reバース for you (Rushia, PSA "REBIRTH FOR YOU HP/001B", LIFE 5)' },
   { id: '1112e6dc-7523-4707-b165-16046ff258ec', why: 'GBF — 開催予定 event-promo flyer (torekore_kudama), not a result' },
   { id: 'e3fdeb9b-d84f-4647-a331-463d664bbffc', why: 'LNJ #294 — ramen photo (nisekoiweiss), no cards at all' },
+  // Round 2 — hololive OFFICIAL CARD GAME (hOCG) on HOL, caught only on a
+  // full-res individual zoom (montage scale wrongly read them as WS). The tell:
+  // holomem cards carry an HP value + Bloom level in a TOP name-bar and have NO
+  // WS diagonal-stripe climax cards; hOCG decks run white support/cheer cards.
+  { id: '41bf5e98-36fb-4dbf-b96b-0b4769662664', why: 'HOL — hOCG AZKi deck (HP 120/150/220, Bloom, "hololive OFFICIAL CARD GAME" mat) — LASTCG_77' },
+  { id: '4a4c0756-c7e9-4220-b1aa-3fcc5493528b', why: 'HOL — hOCG FUWAMOCO (フワワ/モココ・アビスガード holomem) — tcg_mobara (user-reported)' },
+  { id: '6fc31993-478d-48c9-9fef-b39cbda99530', why: 'HOL — hOCG Mori Calliope/Shiranui Flare (HP 210/200, 推しスキル/エール) — LASTCG_77' },
 ];
 
 const ids = TARGETS.map((t) => t.id);
