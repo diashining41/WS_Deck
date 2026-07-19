@@ -35,6 +35,13 @@ const TARGETS: { id: string; why: string }[] = [
   { id: '41bf5e98-36fb-4dbf-b96b-0b4769662664', why: 'HOL — hOCG AZKi deck (HP 120/150/220, Bloom, "hololive OFFICIAL CARD GAME" mat) — LASTCG_77' },
   { id: '4a4c0756-c7e9-4220-b1aa-3fcc5493528b', why: 'HOL — hOCG FUWAMOCO (フワワ/モココ・アビスガード holomem) — tcg_mobara (user-reported)' },
   { id: '6fc31993-478d-48c9-9fef-b39cbda99530', why: 'HOL — hOCG Mori Calliope/Shiranui Flare (HP 210/200, 推しスキル/エール) — LASTCG_77' },
+  // Round 3 — game-gate under-detection (user-reported). OTHER_TCG required the
+  // full "シャドウバース エボルヴ" so a bare "#エボルヴ" Shadowverse result leaked
+  // onto ウマ娘; "ポケカ\b" never fired on "#ポケカ ジムバトル". Both fixed in
+  // src/lib/game.ts; these two predate the fix and are pure non-WS (no ヴァイス,
+  // no climax). A whole-DB re-scan with the new gate flips exactly these two.
+  { id: 'd7580408-8c5b-4f90-9bd6-9391befe258e', why: 'UMA — Shadowverse EVOLVE ("#エボルヴ ショップ大会 デッキ名 ループウマ") — batoloco_tym (user-reported)' },
+  { id: 'c4f508e2-c1d2-475c-a155-c01f2dcc37a7', why: 'PD — Pokémon TCG ("#ポケカ ジムバトル 優勝者 クミクミ様 #リザＸ") — BO_MUSAKO' },
 ];
 
 const ids = TARGETS.map((t) => t.id);
