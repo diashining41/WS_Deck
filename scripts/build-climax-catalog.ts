@@ -58,11 +58,22 @@ async function getJson(url: string): Promise<any> {
 }
 
 type Series = { set: string; side: string; release: string; name: string; lang: string; game: string };
-const series: Series[] = (await getJson('https://www.encoredecks.com/api/serieslist/')) ?? [];
-const wanted = series.filter((s) => s.game === 'WS' && (s.name ?? '').toLowerCase().includes(NAME));
-// unique (set, release) pairs
-const pairs = [...new Map(wanted.map((s) => [`${s.set}/${s.release}`, s])).values()];
-console.log(`serieslist에서 "${NAME}" 매치: ${wanted.length}엔트리 · (set,release) ${pairs.length}쌍`);
+// SETS="GBF/134,GBS/63" enumerates those set/release pairs directly (a title spans
+// several sets; serieslist name-match misses the older ones). Else match by NAME.
+const SETS = (process.env.SETS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+let pairs: Series[];
+if (SETS.length) {
+  pairs = SETS.map((sr) => {
+    const [set, release] = sr.split('/');
+    return { set: set!, release: (release ?? '').replace(/^S/i, ''), side: 'S', name: sr, lang: 'JP', game: 'WS' };
+  });
+  console.log(`명시 SETS ${pairs.length}쌍: ${pairs.map((p) => `${p.set}/S${p.release}`).join(', ')}`);
+} else {
+  const series: Series[] = (await getJson('https://www.encoredecks.com/api/serieslist/')) ?? [];
+  const wanted = series.filter((s) => s.game === 'WS' && (s.name ?? '').toLowerCase().includes(NAME));
+  pairs = [...new Map(wanted.map((s) => [`${s.set}/${s.release}`, s])).values()];
+  console.log(`serieslist에서 "${NAME}" 매치: ${wanted.length}엔트리 · (set,release) ${pairs.length}쌍`);
+}
 for (const p of pairs) console.log(`  ${p.set}/S${p.release}  «${p.name}» ${p.lang}`);
 
 type CxCard = { cardcode: string; set: string; trigger: string[]; type: string | null; name: string; imagepath: string; side: string; level: number };
