@@ -35,6 +35,7 @@
     "catalog:build": "tsx scripts/build-climax-catalog.ts",
     "match:climax": "tsx scripts/match-climax.ts",
     "climax:vision": "tsx scripts/climax-vision.ts",
+    "climax:apply": "tsx scripts/climax-apply.ts",
     "review:apply": "tsx scripts/review-apply.ts"
   },
   "dependencies": {
