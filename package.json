@@ -33,6 +33,7 @@
     "review:tiles": "tsx scripts/deck-tiles.ts",
     "review:ref": "tsx scripts/climax-reference.ts",
     "catalog:build": "tsx scripts/build-climax-catalog.ts",
+    "match:climax": "tsx scripts/match-climax.ts",
     "review:apply": "tsx scripts/review-apply.ts"
   },
   "dependencies": {
