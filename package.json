@@ -32,6 +32,7 @@
     "review:zoom": "tsx scripts/review-vision.ts",
     "review:tiles": "tsx scripts/deck-tiles.ts",
     "review:ref": "tsx scripts/climax-reference.ts",
+    "catalog:build": "tsx scripts/build-climax-catalog.ts",
     "review:apply": "tsx scripts/review-apply.ts"
   },
   "dependencies": {
