@@ -33,6 +33,10 @@ const ALL = process.env.ALL === '1';
 // exact frame-invisible-to-text look). Cell size overridable for legible frames.
 const CODES = (process.env.CODES ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 const SCOPE = CODES.length ? CODES : SHARED_CODES;
+// Filename/label stem for this scope — MUST match what sheet() writes, so the
+// logged path is the real file (a hardcoded "shared_" once sent a reader to a
+// stale all-scope sheet).
+const TAG = CODES.length ? CODES.join('-').toLowerCase() : 'shared';
 
 const raw = await db
   .select({
@@ -105,16 +109,15 @@ async function sheet(offset: number): Promise<void> {
   const montage = await sharp({
     create: { width: COLS * CW, height: Math.ceil(batch.length / COLS) * CH, channels: 3, background: '#000' },
   }).composite(cells).png().toBuffer();
-  const tag = CODES.length ? CODES.join('-').toLowerCase() : 'shared';
-  writeFileSync(join(OUT, `${tag}_${String(offset).padStart(4, '0')}.png`), montage);
+  writeFileSync(join(OUT, `${TAG}_${String(offset).padStart(4, '0')}.png`), montage);
 }
 
 if (ALL) {
   for (let off = 0; off < queue.length; off += LIMIT) { await sheet(off); if (off % 120 === 0) console.log(`  … ${off}/${queue.length}`); }
-  console.log(`전체 ${Math.ceil(queue.length / LIMIT)}시트 → ${OUT}/shared_<offset>.png`);
+  console.log(`전체 ${Math.ceil(queue.length / LIMIT)}시트 → ${OUT}/${TAG}_<offset>.png`);
 } else {
   await sheet(OFFSET);
-  console.log(`시트 → ${OUT}/shared_${String(OFFSET).padStart(4, '0')}.png`);
+  console.log(`시트 → ${OUT}/${TAG}_${String(OFFSET).padStart(4, '0')}.png`);
   for (let i = 0; i < Math.min(LIMIT, queue.length - OFFSET); i++) {
     const r = queue[OFFSET + i]!;
     console.log(`  #${OFFSET + i}  ${r.code}  ${r.url}  [${r.deckId}]`);
