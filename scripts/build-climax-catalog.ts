@@ -88,8 +88,15 @@ for (const p of pairs) {
   let miss = 0;
   for (let n = 1; n <= MAX && miss < 12; n++) {
     const num = String(n).padStart(3, '0');
-    const cardcode = `${p.set}/S${p.release}-${num}`;
-    const c = await fetchCard(cardcode);
+    // A WS set lives on the Weiss (W) or Schwarz (S) side — try both, since
+    // titles differ (GBF=S134, SMP=W60). Whichever code resolves is the card.
+    let c: any = null;
+    let cardcode = '';
+    for (const side of ['S', 'W']) {
+      cardcode = `${p.set}/${side}${p.release}-${num}`;
+      c = await fetchCard(cardcode);
+      if (c && c.cardtype) break;
+    }
     if (!c || !c.cardtype) {
       miss++;
       continue;
