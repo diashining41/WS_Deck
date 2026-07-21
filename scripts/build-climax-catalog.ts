@@ -76,7 +76,7 @@ if (SETS.length) {
 }
 for (const p of pairs) console.log(`  ${p.set}/S${p.release}  «${p.name}» ${p.lang}`);
 
-type CxCard = { cardcode: string; set: string; trigger: string[]; type: string | null; name: string; imagepath: string; side: string; level: number };
+type CxCard = { cardcode: string; set: string; trigger: string[]; type: string | null; name: string; nameJp: string; imagepath: string; side: string; level: number };
 const found: CxCard[] = [];
 const triggerVocab = new Map<string, number>();
 
@@ -98,9 +98,13 @@ for (const p of pairs) {
     if (c.cardtype === 'CX') {
       const trig: string[] = Array.isArray(c.trigger) ? c.trigger : [];
       const type = typeOf(trig);
-      found.push({ cardcode, set: c.set, trigger: trig, type, name: c.locale?.EN?.name ?? c.locale?.NP?.name ?? '', imagepath: c.imagepath, side: c.side, level: c.level });
+      const nameJp = c.locale?.NP?.name ?? c.locale?.JP?.name ?? '';
+      found.push({ cardcode, set: c.set, trigger: trig, type, name: c.locale?.EN?.name ?? nameJp, nameJp, imagepath: c.imagepath, side: c.side, level: c.level });
       for (const t of trig) triggerVocab.set(t, (triggerVocab.get(t) ?? 0) + 1);
-      console.log(`  CX ${cardcode}  ${(type ?? '?').padEnd(5)} trigger=${JSON.stringify(trig)}  «${(c.locale?.EN?.name ?? '').slice(0, 22)}»`);
+      // JP name is the resolution-robust identifier: the CX name bar is 2-3× larger
+      // than the tiny collector code, so vision reads the name off deck photos, then
+      // this maps name→type deterministically (card-number OCR fails on real photos).
+      console.log(`  CX ${cardcode}  ${(type ?? '?').padEnd(5)} trigger=${JSON.stringify(trig)}  JP=「${nameJp}」`);
     }
   }
 }
