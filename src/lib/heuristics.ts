@@ -63,9 +63,23 @@ const BARE_SAFE = new Set([
   '電源', 'スタンバイ', 'スタン', 'ゲート', 'チョイス', 'フォーカス', 'トレジャー', 'ソウル',
   'チャンス', 'ショット', 'リターン', '望遠鏡', 'プール', '焦点', '扉', '門', '宝', '枝', '択', '魂',
 ]);
+// Katakana climax NAMES (as opposed to the one-kanji shorthand). A katakana name
+// glued to another climax token — "フォーカス扉", "フォーカスゲート", "スタンバイ扉" —
+// is a deck ARCHETYPE label, not natural prose: katakana loanword + climax token
+// never sit adjacent by accident. That lets us read a bare, count-less archetype
+// (BRD writes its decks this way) while a lone loanword ("ソウルゲーは楽しい") and a
+// pure-kanji pair ("門扉", a real word) are still rejected.
+const KATAKANA_CX = new Set([
+  '電源', 'スタンバイ', 'スタン', 'ゲート', 'チョイス', 'フォーカス', 'トレジャー', 'ソウル',
+  'チャンス', 'ショット', 'リターン', '焦点',
+]);
 const CX_ALT = Object.keys(CX_TOKEN).sort((a, b) => b.length - a.length).join('|');
 const COUNTED_CX = new RegExp('\\d+\\s*(' + CX_ALT + ')', 'g'); // 8宝 / 6宝2門 / 8게이트
 const BARE_CX = new RegExp('(' + CX_ALT + ')', 'g');
+// Two or more climax tokens back-to-back (optionally joined by ・＆&+／): an
+// archetype run like フォーカス扉 / 扉電源. Trusted only when it contains a katakana
+// name (see KATAKANA_CX) so pure-kanji words never trip it.
+const RUN_CX = new RegExp('(?:' + CX_ALT + ')(?:[・＆&+／/]?(?:' + CX_ALT + '))+', 'g');
 // a line that logs a round result / matchup — its climaxes belong to the opponent
 const MATCH_LINE = /[◯○●◎〇⭕⚪✕×✖✗]|先攻|後攻|先手|後手|\bvs\b|対面|対戦|回戦|\d\s*[-–]\s*\d\s*[◯○✕×]|\d라\s|\dR\b|R\d/i;
 const DECK_LINE = /使用|デッキ|レシピ|構築|사용|レシピの日/;
@@ -79,6 +93,13 @@ export function climaxesFromText(text: string): Climax[] {
       if (c && !found.includes(c)) found.push(c);
     };
     for (const m of line.matchAll(COUNTED_CX)) add(CX_TOKEN[m[1]!]); // strong: count+token
+    // Archetype run (フォーカス扉): completes a count-less label, and also recovers
+    // the second token when a title's trailing digit (ブラウンダスト2) mis-fired the
+    // count above and left only the first climax.
+    for (const run of line.matchAll(RUN_CX)) {
+      const toks = run[0].match(BARE_CX) ?? [];
+      if (toks.some((x) => KATAKANA_CX.has(x))) for (const x of toks) add(CX_TOKEN[x]);
+    }
     if (found.length === 0 && DECK_LINE.test(line))
       for (const m of line.matchAll(BARE_CX)) if (BARE_SAFE.has(m[1]!)) add(CX_TOKEN[m[1]!]);
     if (found.length) return found.slice(0, 3);

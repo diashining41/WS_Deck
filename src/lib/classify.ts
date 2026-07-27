@@ -45,10 +45,15 @@ const RESULT_SIGNAL =
   /優勝|準優勝|入賞|\d\s*位|上位|ベスト\d|使用(?:デッキ|構築|リスト|タイトル)?|使っ|考案|デッキ名|デッキレシピ|レシピ|結果|우승|입상|사용\s*덱|사용덱|先鋒|中堅|大将|全勝|\d\s*[-‐]\s*\d|使\/|勝者|Top\s*\d/i;
 const SHOP_AD =
   /【?\s*販売情報\s*】?|【?\s*入荷情報\s*】?|デッキ販売|買取価格|買取情報|在庫補充|価格調整|価格改定|本日発売|明日発売|発売開始|発売予定|オープンしました|営業(?:中|です|時間|しております)|商品ページ|通販(?:ページ|サイト)|ご来店(?:を)?お?待ち|入荷しました/i;
+// A buylist prices each deck it sells: "学園アイドルマスター 8扉￥9800", "8電源￥3800"
+// — a climax-count notation (digit + 1-6 kana/kanji token chars) glued to a yen
+// price. A tournament result never prices its decks, so this pattern with NO result
+// marker is a sale listing that would otherwise auto-publish each priced deck.
+const SALE_PRICE = /\d\s*[扉門電源宝枝択本魂゠-ヿ]{1,6}\s*[￥¥]\s*\d{3,}/;
 
-/** True when a post is a shop advert / listing rather than a tournament result. */
+/** True when a post is a shop advert / sale listing rather than a tournament result. */
 export function isShopAd(text: string): boolean {
-  return SHOP_AD.test(text) && !RESULT_SIGNAL.test(text);
+  return (SHOP_AD.test(text) || SALE_PRICE.test(text)) && !RESULT_SIGNAL.test(text);
 }
 
 /**
@@ -185,7 +190,6 @@ export function classifyDecks(
   }
 
   // Trio: bind by order of appearance only when the counts line up exactly.
-  // Climaxes are left empty — the text mixes every player's together.
   const ordered = titleMatcher
     .findAll(text)
     .map((m) => ({ titleId: m.key, pos: text.indexOf(m.alias) }))
@@ -195,11 +199,23 @@ export function classifyDecks(
     return mediaIndexes.map((mediaIndex, i) => ({
       mediaIndex,
       titleId: ordered[i]!.titleId,
-      climaxes: [],
+      // Each placement is one line ("優勝 - ブラウンダスト2 フォーカス扉", "準優勝 - 東方
+      // project 8門"), so a title's OWN line names its OWN climax — read it scoped
+      // to that line, not the whole text (which would mix every player's together).
+      // A line with no legible climax stays [] (미상) for image 판독.
+      climaxes: climaxesFromText(lineOf(text, ordered[i]!.pos)),
       // Same rule: a trio with no WS fingerprint is held (titles kept) for 판독.
       status: wsOk ? 'published' : ('needs_review' as const),
     }));
   }
 
   return hold(mediaIndexes);
+}
+
+/** The single line of `text` containing character offset `pos`. */
+function lineOf(text: string, pos: number): string {
+  if (pos < 0) return '';
+  const start = text.lastIndexOf('\n', pos - 1) + 1;
+  const end = text.indexOf('\n', pos);
+  return text.slice(start, end === -1 ? undefined : end);
 }
