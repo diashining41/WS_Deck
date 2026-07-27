@@ -69,6 +69,22 @@ const OTHER_TCG =
 const WS_KEYWORD =
   /ヴァイス|ワイス|シュヴァルツ|シュバルツ|バイス|바이스|와이스|\bWSB?\b|ws\dtcg|wei[sß]|ヴァイシュ|ﾜｲｽ|WGP|ネオスタン|네오스탠|바이스슈발츠/i;
 /**
+ * The UNAMBIGUOUS subset used by the game gate: WS_KEYWORD minus `WGP`.
+ *
+ * `WGP` is not WS-exclusive — hololive OFFICIAL CARD GAME titles its own events
+ * "WGP25-26" too, so a pure ホロカ announcement ("【#ホロカ イベント情報】… WGP25-26
+ * ソウル …", from @hololive_OCG, banning hEB01 cards) tripped WS_KEYWORD via that
+ * lone WGP, made isWs true, and so the OTHER_TCG gate's `!isWs` guard let a
+ * non-WS post publish onto the ホロライブ WS title. A hololive-OCG post never
+ * carries a real ヴァイス/シュヴァルツ name or a WS climax count, so dropping WGP
+ * from the gate's WS proof closes the hole while a genuine WS report (which does
+ * say ヴァイス or shows ≥2 climax counts) stays WS. WGP still counts for
+ * hasWsFingerprint (auto-publish), which is a WS-vs-look-alike test, not a
+ * WS-vs-named-other-game one.
+ */
+const WS_NAME =
+  /ヴァイス|ワイス|シュヴァルツ|シュバルツ|バイス|바이스|와이스|\bWSB?\b|ws\dtcg|wei[sß]|ヴァイシュ|ﾜｲｽ|ネオスタン|네오스탠|바이스슈발츠/i;
+/**
  * WS deck-list fingerprint: climax counts (8門 / 8電源 / 6宝2門 / 扉) that no
  * other TCG on the OTHER_TCG list notates. Two or more ⇒ this is a WS decklist
  * even with no keyword marker (WGP-style team reports often omit "ヴァイス").
@@ -86,7 +102,7 @@ const WS_DECKLIST = /\d\s*(?:門|扉|電源|宝|チョイス|フォーカス|ゲ
 const WS_TEAM_POS = /先鋒|中堅|大将|副将/g;
 
 function isWs(text: string): boolean {
-  return WS_KEYWORD.test(text) || (text.match(WS_DECKLIST)?.length ?? 0) >= 2;
+  return WS_NAME.test(text) || (text.match(WS_DECKLIST)?.length ?? 0) >= 2;
 }
 
 /**
