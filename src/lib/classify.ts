@@ -34,17 +34,18 @@ export interface DeckClassification {
 const MATCH_VIDEO = /対戦動画|試合動画|対戦\s*(?:動画|映像)/;
 
 /**
- * A shop's sales / restock / buylist / open-for-business post — a card image but
- * NOT a tournament result. "【販売情報】8門アズレンのデッキ" or "本日発売！GA文庫入荷"
- * carry a 작품 and would auto-publish as a deck, so they must be held. The tell is
- * a shop-ad phrase with NO tournament-result signal; a post that reports a winner
- * ("優勝", "3位", 使用デッキ, レシピ) is a real result and passes even if it also
- * plugs the next event.
+ * A shop's sales / restock / buylist / open-for-business / display post — a card
+ * image but NOT a tournament result. "【販売情報】8門アズレンのデッキ", "本日発売！GA
+ * 文庫入荷", "開店です！<今日のスケジュール>", or "新デッキをショーケースに展示してます、
+ * お声掛けください" carry a 작품 and would auto-publish as a deck, so they must be
+ * held. The tell is a shop-ad phrase with NO tournament-result signal; a post that
+ * reports a winner ("優勝", "3位", 使用デッキ, レシピ) is a real result and passes even
+ * if it also plugs the next event, opens the store, or displays the winning deck.
  */
 const RESULT_SIGNAL =
   /優勝|準優勝|入賞|\d\s*位|上位|ベスト\d|使用(?:デッキ|構築|リスト|タイトル)?|使っ|考案|デッキ名|デッキレシピ|レシピ|結果|우승|입상|사용\s*덱|사용덱|先鋒|中堅|大将|全勝|\d\s*[-‐]\s*\d|使\/|勝者|Top\s*\d/i;
 const SHOP_AD =
-  /【?\s*販売情報\s*】?|【?\s*入荷情報\s*】?|デッキ販売|買取価格|買取情報|在庫補充|価格調整|価格改定|本日発売|明日発売|発売開始|発売予定|オープンしました|営業(?:中|です|時間|しております)|商品ページ|通販(?:ページ|サイト)|ご来店(?:を)?お?待ち|入荷しました/i;
+  /【?\s*販売情報\s*】?|【?\s*入荷情報\s*】?|デッキ販売|買取価格|買取情報|在庫補充|価格調整|価格改定|本日発売|明日発売|発売開始|発売予定|オープンしました|開店|営業(?:中|です|時間|しております)|営業案内|展示(?:中|して|品)|ショーケース|商品ページ|通販(?:ページ|サイト)|ご来店(?:を)?お?待ち|入荷しました/i;
 // A buylist prices each deck it sells: "学園アイドルマスター 8扉￥9800", "8電源￥3800"
 // — a climax-count notation (digit + 1-6 kana/kanji token chars) glued to a yen
 // price. A tournament result never prices its decks, so this pattern with NO result
@@ -127,6 +128,32 @@ export function isEventPromo(text: string): boolean {
   return PROMO_SIGNAL.test(text) && !PROMO_RESULT.test(text);
 }
 
+/**
+ * A product / card-reveal / release announcement — the maker or a shop HYPING a
+ * set, not a tournament. The Weiß Schwarz OFFICIAL account @wstcg posts "ブースター
+ * パック【推しの子】Vol.3 8月7日発売 …描き下ろしイラストを使用したSPのカードを公開！"
+ * (the site's "오늘의 카드"), and shops repost the same booster flyer — each carries
+ * a 작품 and auto-publishes as a deck though nobody placed.
+ *
+ * The guard here is RESULT_HARD, NOT the loose RESULT_SIGNAL that isShopAd uses:
+ * the reveal text literally says "イラストを使用したSPのカード", and RESULT_SIGNAL's
+ * bare 使用 would falsely read that as a 使用デッキ result and let the flyer through.
+ * RESULT_HARD only counts 使用+{デッキ/構築/リスト/タイトル}, 選手, デッキ名:, 優勝し
+ * た, 🥇 … — the tells a real report carries and a product flyer does not.
+ *
+ * Deliberately NARROW on distinctive product nouns (ブースターパック / トライアルデッキ
+ * / 描き下ろし / カードを公開 / 好評発売中). NOT 発売日・発売記念: a genuine result
+ * routinely dates itself by the set's release ("WGP京都 使用8枝… 発売日から1週間",
+ * "発売記念日に店舗大会優勝") and those must stay published.
+ */
+const PRODUCT_PROMO =
+  /ブースターパック|トライアルデッキ|プレミアムブースター|エクストラブースター|スペシャルパック|カードを公開|カード公開|描き下ろし|収録カード|好評発売中|絶賛発売中|大好評発売中|予約受付中|予約絶賛/;
+
+/** True when a post is a product / card-reveal / release ad rather than a result. */
+export function isProductPromo(text: string): boolean {
+  return PRODUCT_PROMO.test(text) && !RESULT_HARD.test(text);
+}
+
 /** The poster's own deck: what follows a 使用 / 사용 marker, up to the line end. */
 function ownDeckSegment(text: string): string | null {
   const m = text.match(/(?:使用構築|使用リスト|使用デッキ|使用タイトル|使用|사용덱|사용\s*덱|사용)\s*[:：]?\s*([^\n]{0,40})/);
@@ -157,6 +184,10 @@ export function classifyDecks(
 
   // An upcoming-event announcement ("BOX争奪戦 開催！参加費500円") is not a result.
   if (isEventPromo(text)) return hold(mediaIndexes);
+
+  // A product / card-reveal / release flyer ("ブースターパック【推しの子】Vol.3 …SP
+  // のカードを公開", @wstcg official or a shop repost) never placed anywhere.
+  if (isProductPromo(text)) return hold(mediaIndexes);
 
   // A match video is two decks in one post — never auto-place it.
   if (MATCH_VIDEO.test(text)) return hold(mediaIndexes);
