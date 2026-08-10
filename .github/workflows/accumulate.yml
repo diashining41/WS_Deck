@@ -37,6 +37,9 @@ jobs:
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      # Optional: enables the daily AI climax 판독 step below. Absent ⇒ that step
+      # no-ops (exit 0), so the pipeline runs fine before this secret/credits exist.
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -79,6 +82,18 @@ jobs:
         env:
           PAGES: 4
         run: npm run import:naver-archive -- --commit
+
+      # AI 클라이맥스 판독 (사진→클라이맥스). 대회결과 트윗은 클라이맥스를 텍스트로
+      # 거의 안 적어 ~65%가 미상으로 들어오는데, 그 값은 사진에만 있으므로 비전이 필요.
+      # 반드시 export 앞에서 돌아 새로 읽은 클라이맥스가 스냅샷에 반영되게 함.
+      # continue-on-error + 스크립트 자체가 키/크레딧 없으면 exit 0 → 파이프라인 불변.
+      - name: AI 클라이맥스 백필 (미상 → 사진 판독)
+        continue-on-error: true
+        env:
+          LIMIT: 60
+          DAYS: 14
+          MAX_COST: 4
+        run: npm run climax:backfill
 
       - name: 정적 스냅샷 갱신
         run: npm run export:static
