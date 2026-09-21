@@ -212,7 +212,177 @@ function parseRss(xml: string, fallbackHandle: string): TimelineRef[] {
   return out;
 }
 
-export async function fetchTimeline(handle: string, hosts: string[] = NITTER_HOSTS): Promise<TimelineRef[]> {
+/* ----------------------------------------------- discovery (official API) */
+
+/**
+ * Paid X API v2 discovery — no account, no cookies, fully legit (app-only Bearer).
+ * Uses recent search with a per-account `from:` filter AND a tournament-keyword
+ * group, so we only ever READ (and pay ~$0.005 for) posts that look like results;
+ * shop chatter is filtered server-side and never billed. `since_id` (the account
+ * cursor) means a post is read at most once. Pay-per-use, no subscription — a
+ * small credit top-up is a hard spending ceiling.
+ *
+ * Recall trade-off (deliberate, chosen for "min cost / max efficiency"): X search
+ * has no regex, so the signals the prefilter catches by PATTERN — bare placements
+ * (2位), win-loss records (3-3), medal-only posts — are only caught here via
+ * explicit keywords/emoji. A result post that uses none of the query terms is not
+ * read. Tune the term set with X_QUERY (no code change). Also: recent search only
+ * spans the last 7 days, so it keeps the archive current going forward but can't
+ * backfill the older gap (that needs a cookie run or full-archive search).
+ */
+export const TOURNAMENT_TERMS = [
+  '優勝', '準優勝', '入賞', '上位入賞', '決勝', '予選突破', '全勝', '大会結果', 'ベスト4', 'ベスト8',
+  '大会', 'ショップ大会', '公認', '公認大会', 'ネオスタンダード', 'ネオスタン', 'チャンピオンシップ', '選手権', 'トリオ', 'チーム戦', 'WGP', 'CXチャレンジ',
+  '우승', '준우승', '입상', '대회', '결승', '공인',
+  'championship', 'regionals', '"top 4"', '"top 8"',
+  '🏆', '🥇', '🥈', '🥉',
+];
+const DEFAULT_QUERY = TOURNAMENT_TERMS.join(' OR ');
+
+const xBearer = () => process.env.X_BEARER_TOKEN?.trim() || '';
+export function hasXApi(): boolean {
+  return !!xBearer();
+}
+
+// Twitter snowflake ids embed a ms timestamp: age lets us skip a since_id that
+// predates recent-search's 7-day window (which would 400 the request).
+function snowflakeAgeDays(id: string): number {
+  try {
+    return (Date.now() - (Number(BigInt(id) >> 22n) + 1288834974657)) / 86_400_000;
+  } catch {
+    return Infinity;
+  }
+}
+
+async function xApiGet(path: string): Promise<any> {
+  const res = await fetch(`https://api.x.com${path}`, { headers: { Authorization: `Bearer ${xBearer()}`, 'User-Agent': UA } });
+  if (res.status === 429) {
+    const reset = res.headers.get('x-rate-limit-reset');
+    throw new RateLimited(reset ? new Date(Number(reset) * 1000) : new Date(Date.now() + 15 * 60_000));
+  }
+  if (!res.ok) throw new Error(`X API ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return res.json();
+}
+
+export async function fetchTimelineViaApi(handle: string, opts: { sinceId?: string } = {}): Promise<TimelineRef[]> {
+  const query = process.env.X_QUERY?.trim() || DEFAULT_QUERY;
+  const params = new URLSearchParams({
+    query: `from:${handle} (${query}) -is:retweet`,
+    max_results: '100',
+    'tweet.fields': 'created_at',
+  });
+  // Only send since_id when it's inside the 7-day recent-search window; an older
+  // cursor 400s. Without it, we read the full 7-day window and the poller's own
+  // cursor filter (plus the DB unique constraint) dedupes — costs a little more
+  // once, never loses a post.
+  if (opts.sinceId && snowflakeAgeDays(opts.sinceId) < 6.5) params.set('since_id', opts.sinceId);
+  const j = await xApiGet(`/2/tweets/search/recent?${params.toString()}`);
+  return (j?.data ?? []).map((t: any) => ({
+    id: String(t.id),
+    authorHandle: handle,
+    text: (t.text ?? '').trim(),
+    createdAt: t.created_at ? new Date(t.created_at) : new Date(0),
+    url: `https://x.com/${handle}/status/${t.id}`,
+  }));
+}
+
+/* ------------------------------------------- discovery (logged-in cookie) */
+
+/**
+ * Cookie-based discovery. Every nitter instance died (see NITTER_HOSTS — the
+ * whole ecosystem collapsed: offline, Cloudflare bot-walls, or 403), so we can
+ * no longer discover tweets anonymously. Discovery now runs through the
+ * logged-in web API with a throwaway account's session cookies.
+ *
+ * Free and automated, but against X's ToS and subject to the account being
+ * rate-limited or suspended — treat the cookies as disposable and expect to
+ * refresh them when they expire (health() reports when they've gone stale).
+ *
+ * Provide EITHER X_COOKIES (a full "name=value; name=value" cookie header copied
+ * from a logged-in browser) OR both X_AUTH_TOKEN and X_CT0. Absent ⇒ we fall
+ * through to the (dead) nitter path, so nothing crashes before the secret exists.
+ */
+// Read lazily (at call time), not at module load: a script's loadEnv() runs
+// AFTER this module is first evaluated, so top-level env reads would miss .env.local.
+function xEnv() {
+  return {
+    cookies: process.env.X_COOKIES?.trim() || '',
+    authToken: process.env.X_AUTH_TOKEN?.trim() || '',
+    ct0: process.env.X_CT0?.trim() || '',
+    maxTweets: Number(process.env.X_MAX_TWEETS ?? 20),
+  };
+}
+export function hasXCookies(): boolean {
+  const e = xEnv();
+  return !!(e.cookies || (e.authToken && e.ct0));
+}
+
+/**
+ * tough-cookie only sends a cookie whose domain matches the request host, and
+ * the scraper talks to both twitter.com and x.com — so register each cookie for
+ * both domains. setCookies() accepts raw strings, so no tough-cookie import.
+ */
+function cookieStrings(): string[] {
+  const e = xEnv();
+  const pairs: string[] = [];
+  if (e.cookies) {
+    for (const part of e.cookies.split(';')) {
+      const p = part.trim();
+      if (p.includes('=')) pairs.push(p);
+    }
+  } else {
+    pairs.push(`auth_token=${e.authToken}`, `ct0=${e.ct0}`);
+  }
+  const out: string[] = [];
+  for (const domain of ['.twitter.com', '.x.com']) for (const p of pairs) out.push(`${p}; Domain=${domain}; Path=/; Secure`);
+  return out;
+}
+
+// One scraper per process: cookies are set once and the session is reused across
+// every account in the sweep. Lazily loaded so the heavy dep never enters other
+// scripts' or the Next build's module graph.
+let _scraper: Promise<any> | null = null;
+function xScraper(): Promise<any> {
+  if (!_scraper) {
+    _scraper = (async () => {
+      const mod: any = await import('@the-convocation/twitter-scraper');
+      const Scraper = mod.Scraper ?? mod.default?.Scraper ?? mod.default;
+      const s = new Scraper();
+      await s.setCookies(cookieStrings());
+      return s;
+    })();
+  }
+  return _scraper;
+}
+
+export async function fetchTimelineViaCookies(handle: string, count?: number): Promise<TimelineRef[]> {
+  const s = await xScraper();
+  const out: TimelineRef[] = [];
+  for await (const t of s.getTweets(handle, count ?? xEnv().maxTweets) as AsyncIterable<any>) {
+    // Match nitter's "Tweets" tab: skip replies. Keep retweets — a shop that RTs
+    // a player's result still surfaces a deck, and the timeline id stays monotonic
+    // so the poller's cursor is unaffected.
+    if (!t?.id || t.isReply) continue;
+    out.push({
+      id: String(t.id),
+      authorHandle: t.username ?? handle,
+      text: (t.text ?? '').trim(),
+      createdAt: t.timeParsed ?? (t.timestamp ? new Date(t.timestamp * 1000) : new Date(0)),
+      url: t.permanentUrl ?? `https://x.com/${t.username ?? handle}/status/${t.id}`,
+    });
+  }
+  return out;
+}
+
+/* ------------------------------------------------- discovery (nitter, dead) */
+
+export async function fetchTimeline(handle: string, opts: { sinceId?: string; hosts?: string[] } = {}): Promise<TimelineRef[]> {
+  // Priority: official API (paid, keyword-filtered) → logged-in cookie → nitter.
+  // The nitter loop is a dead fallback, kept only so the job still runs and
+  // health() still reports before a discovery secret is configured.
+  if (hasXApi()) return fetchTimelineViaApi(handle, { sinceId: opts.sinceId });
+  if (hasXCookies()) return fetchTimelineViaCookies(handle);
+  const hosts = opts.hosts ?? NITTER_HOSTS;
   let lastErr = '';
   for (const host of hosts) {
     try {
@@ -240,11 +410,49 @@ export async function fetchTimeline(handle: string, hosts: string[] = NITTER_HOS
  * quietly going stale.
  */
 export async function health(): Promise<{ ok: boolean; detail: string }> {
+  // When cookies are configured, THEY are the discovery path — test them, not
+  // the dead nitter instances. A 0-item result means the cookie has expired or
+  // the account is blocked: the signal that must surface instead of a silent
+  // green run committing an unchanged snapshot.
+  if (hasXApi()) {
+    // A user lookup verifies the Bearer token without depending on any account
+    // having a recent tournament post (a keyword search could legitimately be
+    // empty). 200 + an id ⇒ auth is good.
+    try {
+      const j = await xApiGet('/2/users/by/username/mathjong1');
+      return j?.data?.id
+        ? { ok: true, detail: 'x-api ✅ (Bearer 인증 OK)' }
+        : { ok: false, detail: `x-api ✗ 응답 이상: ${JSON.stringify(j).slice(0, 120)}` };
+    } catch (e) {
+      return { ok: false, detail: `x-api ✗ ${e instanceof Error ? e.message : e} — X_BEARER_TOKEN 확인/크레딧 잔액 확인` };
+    }
+  }
+  if (hasXCookies()) {
+    // Try a few active shops — one deleted/quiet account shouldn't read as "cookie
+    // dead". OK if ANY returns tweets.
+    const probes = ['mathjong1', 'bigmagicakb', 'YS_HIMEJI'];
+    const parts: string[] = [];
+    let lastErr = '';
+    for (const h of probes) {
+      try {
+        const refs = await fetchTimelineViaCookies(h, 5);
+        parts.push(`${h}:${refs.length}`);
+        if (refs.length > 0) return { ok: true, detail: `x-cookie ✅ ${parts.join(' ')}` };
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : String(e);
+        parts.push(`${h}:✗`);
+      }
+    }
+    return {
+      ok: false,
+      detail: `x-cookie ✗ ${parts.join(' ')}${lastErr ? ` (${lastErr})` : ''} — 쿠키 만료/계정 차단 의심, 재로그인해 X_AUTH_TOKEN·X_CT0 갱신 필요`,
+    };
+  }
   const parts: string[] = [];
   let anyOk = false;
   for (const host of NITTER_HOSTS) {
     try {
-      const refs = await fetchTimeline('mathjong1', [host]);
+      const refs = await fetchTimeline('mathjong1', { hosts: [host] });
       if (refs.length > 0) {
         anyOk = true;
         parts.push(`${host}✅${refs.length}`);

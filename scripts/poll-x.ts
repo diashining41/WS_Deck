@@ -67,7 +67,9 @@ let variant = 0;
 
 for (const [i, acct] of due.entries()) {
   try {
-    const refs = await fetchTimeline(acct.handle);
+    // Pass the cursor so the API path bills each post at most once (since_id).
+    // The nitter/cookie paths ignore it and rely on the client-side filter below.
+    const refs = await fetchTimeline(acct.handle, { sinceId: acct.lastSeenId ?? undefined });
 
     // RSS is chronological, but the cursor is still a snowflake-id compare so it
     // survives out-of-order feeds and duplicate instances. lastSeenId is the

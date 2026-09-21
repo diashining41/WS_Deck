@@ -40,6 +40,17 @@ jobs:
       # Optional: enables the daily AI climax 판독 step below. Absent ⇒ that step
       # no-ops (exit 0), so the pipeline runs fine before this secret/credits exist.
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # Discovery credential. nitter died everywhere. Priority: official API →
+      # cookie session → (dead) nitter. Set X_BEARER_TOKEN (paid X API v2 app-only
+      # Bearer, keyword-filtered recent search — no account, pay-per-use) for the
+      # primary path; OR X_AUTH_TOKEN+X_CT0 / X_COOKIES for the free cookie path.
+      # Absent ⇒ the health preflight fails loudly instead of silently going stale.
+      X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+      X_AUTH_TOKEN: ${{ secrets.X_AUTH_TOKEN }}
+      X_CT0: ${{ secrets.X_CT0 }}
+      X_COOKIES: ${{ secrets.X_COOKIES }}
+      # Optional: override the tournament keyword group used by the API search.
+      X_QUERY: ${{ secrets.X_QUERY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -60,7 +71,13 @@ jobs:
             exit 1
           fi
 
-      - name: 새 대회 트윗 발견 (nitter)
+      # Fail fast and LOUD if discovery is dead. This is the guard that was missing
+      # when nitter died: the job stayed green for ~6 weeks while ingesting zero
+      # decks. Now a stale/blocked cookie (or missing secret) reds the run instead.
+      - name: 수집 상태 점검 (쿠키 살아있는지 — 죽었으면 즉시 중단)
+        run: npm run health:x
+
+      - name: 새 대회 트윗 발견 (로그인 세션)
         run: npm run poll
 
       # Bounded on purpose. upload:r2 runs only AFTER this step finishes, so a
