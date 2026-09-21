@@ -1,4 +1,6 @@
+import dns from 'node:dns';
 import { mkdirSync } from 'node:fs';
+import net from 'node:net';
 
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
@@ -8,6 +10,16 @@ import postgres from 'postgres';
 import { loadEnv } from '@/lib/env';
 
 import * as schema from './schema';
+
+// CI runners (GitHub Actions) have no IPv6. When the Neon endpoint is dual-stack,
+// Node's Happy-Eyeballs races IPv6 (instant ENETUNREACH on the runner) against
+// IPv4 with a 250ms per-family attempt timeout — and the cross-region IPv4 SYN
+// loses that race, so the connect fails with ETIMEDOUT even though IPv4 is fine
+// (it connects locally). Prefer IPv4 and give the SYN a generous window. Harmless
+// where IPv6 works (IPv4 to these hosts is always reachable). This must run before
+// any socket is opened, i.e. before the postgres client is created below.
+dns.setDefaultResultOrder('ipv4first');
+net.setDefaultAutoSelectFamilyAttemptTimeout(5000);
 
 // Pull DATABASE_URL from .env.local before deciding PGlite vs Neon, so every
 // script picks up the cloud DB without needing it exported in the shell.
