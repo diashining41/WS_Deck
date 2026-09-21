@@ -2,8 +2,11 @@
  * Daily climax backfill (CI-safe). Auto-selects recently-captured PUBLISHED decks
  * whose climax is still 미상 and that have a usable photo, runs the same tiled
  * Opus-vision read as climax-vision.ts, and writes back ONLY high-confidence
- * verdicts (is_ws_deck && climaxes.length && confidence >= 0.6). Reversible: only
- * decks.climaxes changes.
+ * verdicts (is_ws_deck && climaxes.length && confidence >= 0.6). It ALSO cleans up
+ * the archive: keyword discovery lets non-deck posts through (flyers, sale ads,
+ * pairing charts, other games), and when the vision pass is confident a photo is
+ * NOT a WS deck (!is_ws_deck && confidence >= REJECT_CONF) it un-publishes it.
+ * Reversible: only decks.climaxes / decks.status change.
  *
  * Why this exists: the daily accumulate pipeline fills climaxes from post TEXT
  * only (climaxesFromText), but result tweets rarely state the climax ("優勝は〇〇
@@ -19,7 +22,7 @@
  *     always cheap and always finishes before the export step that follows it.
  *
  * ENV: LIMIT(60) · DAYS(14 — only recent decks, so unreadable ones age out of retry)
- *      · MAX_COST(4.00 USD) · TCOLS(3) TROWS(2) · DRY=1 (read+print, write nothing)
+ *      · MAX_COST(4.00 USD) · TCOLS(3) TROWS(2) · REJECT_CONF(0.8) · DRY=1 (no writes)
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -49,6 +52,12 @@ const MAX_COST = Number(process.env.MAX_COST ?? 4);
 const TCOLS = Number(process.env.TCOLS ?? 3);
 const TROWS = Number(process.env.TROWS ?? 2);
 const DRY = process.env.DRY === '1';
+// Keyword discovery pulls in non-deck posts (flyers, sale ads, pairing charts,
+// product shots, other games) that pass the text prefilter but aren't a deck
+// recipe. The vision pass already judges is_ws_deck; when it's CONFIDENT the photo
+// is NOT a WS deck, un-publish it. High bar so a merely-hard real photo (which
+// gets LOW confidence) is held, not dropped. Reversible: only decks.status changes.
+const REJECT_CONF = Number(process.env.REJECT_CONF ?? 0.8);
 const MODEL = 'claude-opus-4-8';
 const IN = 5 / 1_000_000;
 const OUT = 25 / 1_000_000;
@@ -109,6 +118,7 @@ console.log(`후보 ${cands.length}건 (최근 ${DAYS}일 · published · 미상
 
 let costTotal = 0;
 let applied = 0;
+let rejected = 0;
 let read = 0;
 let stopped = '';
 
@@ -163,15 +173,24 @@ for (const r of cands) {
 
   read++;
   const got = v.climaxes.join(',');
+  const reject = !v.is_ws_deck && v.confidence >= REJECT_CONF;
   const write = v.is_ws_deck && v.climaxes.length > 0 && v.confidence >= 0.6;
-  console.log(`  ${r.deckId.slice(0, 8)} ${(r.code ?? '-').padEnd(5)} AI=[${got}] conf=${v.confidence.toFixed(2)} cnt=${v.count_seen} ${write ? '→ 반영' : '(보류)'} · $${costTotal.toFixed(2)}`);
-  if (write && !DRY) {
+  const label = reject ? '✗덱아님→제외' : write ? '→ 반영' : '(보류)';
+  console.log(
+    `  ${r.deckId.slice(0, 8)} ${(r.code ?? '-').padEnd(5)} AI=[${got}] ws=${v.is_ws_deck} conf=${v.confidence.toFixed(2)} cnt=${v.count_seen} ${label} · $${costTotal.toFixed(2)}`,
+  );
+  if (reject && !DRY) {
+    // Confidently not a WS deck → un-publish so it drops off the site. Guarded on
+    // still-published-미상 so a deck a human just curated is never touched. Reversible.
+    await db.update(decks).set({ status: 'rejected' }).where(sql`${decks.id} = ${r.deckId} AND ${decks.status} = 'published' AND ${decks.climaxes} = '{}'`);
+    rejected++;
+  } else if (write && !DRY) {
     // Guard the write on still-미상 so a concurrent human edit is never clobbered.
     await db.update(decks).set({ climaxes: v.climaxes as Climax[] }).where(sql`${decks.id} = ${r.deckId} AND ${decks.climaxes} = '{}'`);
     applied++;
   }
 }
 
-console.log(`\n판독 ${read}건 · 반영 ${applied}건 · 총비용 $${costTotal.toFixed(2)}${stopped ? ` · ${stopped}` : ''}`);
+console.log(`\n판독 ${read}건 · 반영 ${applied}건 · 덱아님제외 ${rejected}건 · 총비용 $${costTotal.toFixed(2)}${stopped ? ` · ${stopped}` : ''}`);
 if (stopped) console.log('(중단 사유가 있어도 exit 0 — 파이프라인은 계속 진행합니다.)');
 await closeDb();
