@@ -148,7 +148,7 @@ for (const r of cands) {
     ].join('\n'),
   });
 
-  let v: z.infer<typeof Verdict>;
+  let v: z.infer<typeof Verdict> | null = null;
   try {
     const resp = await anthropic.messages.parse({
       model: MODEL,
@@ -157,7 +157,7 @@ for (const r of cands) {
       output_config: { effort: 'high', format: zodOutputFormat(Verdict) },
       messages: [{ role: 'user', content }],
     });
-    v = resp.parsed_output!;
+    v = resp.parsed_output ?? null;
     const u = resp.usage;
     costTotal += (u.input_tokens ?? 0) * IN + (u.output_tokens ?? 0) * OUT;
   } catch (e: any) {
@@ -168,6 +168,12 @@ for (const r of cands) {
       break;
     }
     console.log(`  ${r.deckId.slice(0, 8)} 판독 오류 — 스킵: ${msg.slice(0, 80)}`);
+    continue;
+  }
+  // The model occasionally returns no valid structured output; skip rather than
+  // crash the whole run (one bad photo shouldn't stop the daily backfill).
+  if (!v) {
+    console.log(`  ${r.deckId.slice(0, 8)} 구조화 출력 없음 — 스킵`);
     continue;
   }
 
